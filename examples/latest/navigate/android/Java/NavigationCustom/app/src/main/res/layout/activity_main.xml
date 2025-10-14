@@ -86,6 +86,7 @@
             android:textSize="14sp" />
 
         <Button
+            android:id="@+id/set_mapview_framerate_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:onClick="setMapViewFrameRateClicked"
@@ -123,6 +124,7 @@
             android:textSize="14sp" />
 
         <Button
+            android:id="@+id/set_guidance_framerate_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:onClick="setGuidanceFrameRateClicked"
@@ -134,4 +136,3 @@
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-

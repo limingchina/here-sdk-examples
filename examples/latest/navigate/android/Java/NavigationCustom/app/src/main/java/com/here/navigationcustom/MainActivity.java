@@ -27,6 +27,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.Toast;
+import android.widget.Button;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -100,6 +101,12 @@ public class MainActivity extends AppCompatActivity {
     private final double cameraTiltInDegrees = 40.0;
     private final double cameraDistanceInMeters = 200.0;
 
+    // UI references for framerate controls
+    private EditText mapViewFrameRateInput;
+    private EditText guidanceFrameRateInput;
+    private Button setMapViewFrameRateButton;
+    private Button setGuidanceFrameRateButton;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -117,6 +124,12 @@ public class MainActivity extends AppCompatActivity {
         mapView = findViewById(R.id.map_view);
         mapView.onCreate(savedInstanceState);
 
+        // Initialize UI controls (framerate inputs and buttons).
+        mapViewFrameRateInput = findViewById(R.id.mapview_framerate);
+        guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
+        setMapViewFrameRateButton = findViewById(R.id.set_mapview_framerate_button);
+        setGuidanceFrameRateButton = findViewById(R.id.set_guidance_framerate_button);
+
         handleAndroidPermissions();
 
         try {
@@ -131,6 +144,9 @@ public class MainActivity extends AppCompatActivity {
         } catch (InstantiationErrorException e) {
             throw new RuntimeException("Initialization of VisualNavigator failed: " + e.error.name());
         }
+
+        // Update the UI state for framerate controls depending on whether guidance is active.
+        updateFramerateUIState();
 
         showDialog("Custom Navigation",
                 "Start / stop simulated route guidance. Toggle between custom / default LocationIndicator.");
@@ -289,7 +305,6 @@ public class MainActivity extends AppCompatActivity {
 
     // Set the MapView framerate based on user input.
     public void setMapViewFrameRateClicked(View view) {
-        EditText mapViewFrameRateInput = findViewById(R.id.mapview_framerate);
         String frameRateText = mapViewFrameRateInput.getText().toString();
 
         if (frameRateText.isEmpty()) {
@@ -314,7 +329,6 @@ public class MainActivity extends AppCompatActivity {
 
     // Set the Guidance (VisualNavigator) framerate based on user input.
     public void setGuidanceFrameRateClicked(View view) {
-        EditText guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
         String frameRateText = guidanceFrameRateInput.getText().toString();
 
         if (frameRateText.isEmpty()) {
@@ -335,6 +349,19 @@ public class MainActivity extends AppCompatActivity {
         } catch (NumberFormatException e) {
             Toast.makeText(this, "Invalid framerate value", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    // Update the enabled/disabled state of the framerate inputs and buttons.
+    private void updateFramerateUIState() {
+        boolean rendering = (visualNavigator != null && visualNavigator.isRendering());
+
+        // When guidance is active, editing MapView framerate should be disabled.
+        mapViewFrameRateInput.setEnabled(!rendering);
+        setMapViewFrameRateButton.setEnabled(!rendering);
+
+        // When guidance is not active, editing Guidance framerate should be disabled.
+        guidanceFrameRateInput.setEnabled(rendering);
+        setGuidanceFrameRateButton.setEnabled(rendering);
     }
 
     private void setSelectedHaloColor() {
@@ -474,6 +501,9 @@ public class MainActivity extends AppCompatActivity {
         // This app does not use real location updates. Instead it provides location updates based
         // on the geographic coordinates of a route using HERE SDK's LocationSimulator.
         startRouteSimulation(route);
+
+        // Update UI to reflect that guidance is now active.
+        updateFramerateUIState();
     }
 
     private void stopGuidance() {
@@ -487,6 +517,9 @@ public class MainActivity extends AppCompatActivity {
         switchToPedestrianLocationIndicator();
 
         animateToDefaultMapPerspective();
+
+        // Update UI to reflect that guidance is no longer active.
+        updateFramerateUIState();
     }
 
     private void customizeVisualNavigatorColors() {
@@ -566,12 +599,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         mapView.onPause();
+        // Keep UI state consistent when pausing the activity.
+        updateFramerateUIState();
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         mapView.onResume();
+        // Refresh UI state in case guidance rendering state changed while paused.
+        updateFramerateUIState();
         super.onResume();
     }
 
