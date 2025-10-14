@@ -25,6 +25,8 @@ import android.content.Context;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.EditText;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -136,8 +138,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void initializeHERESDK() {
         // Set your credentials for the HERE SDK.
-        String accessKeyID = "YOUR_ACCESS_KEY_ID";
-        String accessKeySecret = "YOUR_ACCESS_KEY_SECRET";
+        String accessKeyID = BuildConfig.HERE_ACCESS_KEY_ID;
+        String accessKeySecret = BuildConfig.HERE_ACCESS_KEY_SECRET;
         AuthenticationMode authenticationMode = AuthenticationMode.withKeySecret(accessKeyID, accessKeySecret);
         SDKOptions options = new SDKOptions(authenticationMode);
         try {
@@ -185,13 +187,9 @@ public class MainActivity extends AppCompatActivity {
                 if (mapError == null) {
                     // Enable a few map layers that might be useful to see for drivers.
                     Map<String, String> mapFeatures = new HashMap<>();
-                    mapFeatures.put(MapFeatures.TRAFFIC_FLOW, MapFeatureModes.TRAFFIC_FLOW_WITH_FREE_FLOW);
+                    mapFeatures.put(MapFeatures.TRAFFIC_FLOW, MapFeatureModes.TRAFFIC_FLOW_WITHOUT_FREE_FLOW);
                     mapFeatures.put(MapFeatures.TRAFFIC_INCIDENTS, MapFeatureModes.DEFAULT);
-                    mapFeatures.put(MapFeatures.SAFETY_CAMERAS, MapFeatureModes.DEFAULT);
-                    mapFeatures.put(MapFeatures.VEHICLE_RESTRICTIONS, MapFeatureModes.DEFAULT);
 
-                    // Optionally, enable textured 3D landmarks.
-                    mapFeatures.put(MapFeatures.LANDMARKS, MapFeatureModes.LANDMARKS_TEXTURED);
                     mapView.getMapScene().enableFeatures(mapFeatures);
 
                     defaultLocationIndicator = createDefaultLocationIndicator();
@@ -237,7 +235,7 @@ public class MainActivity extends AppCompatActivity {
 
         locationIndicator.setAccuracyVisualized(true);
         locationIndicator.setLocationIndicatorStyle(IndicatorStyle.PEDESTRIAN);
-        
+
         return locationIndicator;
     }
 
@@ -287,6 +285,56 @@ public class MainActivity extends AppCompatActivity {
         // Toggle state.
         isCustomHaloColor = !isCustomHaloColor;
         setSelectedHaloColor();
+    }
+
+    // Set the MapView framerate based on user input.
+    public void setMapViewFrameRateClicked(View view) {
+        EditText mapViewFrameRateInput = findViewById(R.id.mapview_framerate);
+        String frameRateText = mapViewFrameRateInput.getText().toString();
+
+        if (frameRateText.isEmpty()) {
+            Toast.makeText(this, "Please enter a framerate value", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            int frameRate = Integer.parseInt(frameRateText);
+            if (frameRate <= 0 || frameRate > 120) {
+                Toast.makeText(this, "Framerate must be between 1 and 120", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            mapView.setFrameRate(frameRate);
+            Toast.makeText(this, "MapView framerate set to " + frameRate + " FPS", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "MapView framerate set to: " + frameRate);
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "Invalid framerate value", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // Set the Guidance (VisualNavigator) framerate based on user input.
+    public void setGuidanceFrameRateClicked(View view) {
+        EditText guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
+        String frameRateText = guidanceFrameRateInput.getText().toString();
+
+        if (frameRateText.isEmpty()) {
+            Toast.makeText(this, "Please enter a framerate value", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            int frameRate = Integer.parseInt(frameRateText);
+            if (frameRate <= 0 || frameRate > 120) {
+                Toast.makeText(this, "Framerate must be between 1 and 120", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            visualNavigator.setGuidanceFrameRate(frameRate);
+            Toast.makeText(this, "Guidance framerate set to " + frameRate + " FPS", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Guidance framerate set to: " + frameRate);
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "Invalid framerate value", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void setSelectedHaloColor() {
@@ -562,3 +610,4 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 }
+

@@ -8,6 +8,19 @@ android {
         targetSdkVersion 35
         versionCode 1
         versionName "1.0"
+
+        // Read HERE SDK credentials from local.properties
+        Properties properties = new Properties()
+        if (rootProject.file("local.properties").exists()) {
+            properties.load(rootProject.file("local.properties").newDataInputStream())
+        }
+
+        // Inject credentials as BuildConfig fields
+        buildConfigField "String", "HERE_ACCESS_KEY_ID", "\"${properties.getProperty('here.accessKeyId', '')}\""
+        buildConfigField "String", "HERE_ACCESS_KEY_SECRET", "\"${properties.getProperty('here.accessKeySecret', '')}\""
+    }
+    buildFeatures {
+        buildConfig true
     }
     buildTypes {
         release {
