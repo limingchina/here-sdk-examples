@@ -48,8 +48,10 @@ import com.here.sdk.core.engine.SDKNativeEngine;
 import com.here.sdk.core.engine.SDKOptions;
 import com.here.sdk.core.errors.InstantiationErrorException;
 import com.here.sdk.mapview.LocationIndicator;
+import com.here.sdk.mapview.MapCamera;
 import com.here.sdk.mapview.MapCameraAnimation;
 import com.here.sdk.mapview.MapCameraAnimationFactory;
+import com.here.sdk.mapview.MapCameraListener;
 import com.here.sdk.mapview.MapError;
 import com.here.sdk.mapview.MapFeatureModes;
 import com.here.sdk.mapview.MapFeatures;
@@ -87,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
 
     private PermissionsRequestor permissionsRequestor;
     private MapView mapView;
+    private ScaleBarView scaleBarView;
     private RoutingEngine routingEngine;
     private VisualNavigator visualNavigator;
     private LocationSimulator locationSimulator;
@@ -123,6 +126,9 @@ public class MainActivity extends AppCompatActivity {
         // Get a MapView instance from the layout.
         mapView = findViewById(R.id.map_view);
         mapView.onCreate(savedInstanceState);
+
+        // Initialize ScaleBarView
+        scaleBarView = findViewById(R.id.scale_bar);
 
         // Initialize UI controls (framerate inputs and buttons).
         mapViewFrameRateInput = findViewById(R.id.mapview_framerate);
@@ -214,6 +220,18 @@ public class MainActivity extends AppCompatActivity {
                     // We start with the built-in default LocationIndicator.
                     isDefaultLocationIndicator = true;
                     switchToPedestrianLocationIndicator();
+                    // Update ScaleBarView when the zoom level changes.
+                    mapView.getCamera().addListener(new MapCameraListener() {
+                        @Override
+                        public void onMapCameraUpdated(@NonNull MapCamera.State cameraState) {
+                            double zoomLevel = cameraState.zoomLevel;
+                            scaleBarView.updateScale(zoomLevel);
+                        }
+                    });
+                    // Initialize scale bar with current zoom level
+                    scaleBarView.updateScale(mapView.getCamera().getState().zoomLevel);
+
+
                 } else {
                     Log.d(TAG, "Loading map failed: mapError: " + mapError.name());
                 }
@@ -647,4 +665,3 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 }
-
