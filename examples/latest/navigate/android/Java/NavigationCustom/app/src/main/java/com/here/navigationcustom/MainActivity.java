@@ -52,6 +52,7 @@ import com.here.sdk.mapview.MapCamera;
 import com.here.sdk.mapview.MapCameraAnimation;
 import com.here.sdk.mapview.MapCameraAnimationFactory;
 import com.here.sdk.mapview.MapCameraListener;
+import com.here.sdk.mapview.MapContentSettings;
 import com.here.sdk.mapview.MapError;
 import com.here.sdk.mapview.MapFeatureModes;
 import com.here.sdk.mapview.MapFeatures;
@@ -60,6 +61,7 @@ import com.here.sdk.mapview.MapMeasure;
 import com.here.sdk.mapview.MapScene;
 import com.here.sdk.mapview.MapScheme;
 import com.here.sdk.mapview.MapView;
+import com.here.sdk.mapview.VisibilityState;
 import com.here.sdk.navigation.FixedCameraBehavior;
 import com.here.sdk.navigation.LocationSimulator;
 import com.here.sdk.navigation.LocationSimulatorOptions;
@@ -129,6 +131,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Initialize ScaleBarView
         scaleBarView = findViewById(R.id.scale_bar);
+        scaleBarView.setMapView(mapView);
 
         // Initialize UI controls (framerate inputs and buttons).
         mapViewFrameRateInput = findViewById(R.id.mapview_framerate);
@@ -230,7 +233,10 @@ public class MainActivity extends AppCompatActivity {
                     });
                     // Initialize scale bar with current zoom level
                     scaleBarView.updateScale(mapView.getCamera().getState().zoomLevel);
-
+                    MapContentSettings.setPoiCategoriesVisibility(
+                            new ArrayList<>(Arrays.asList("100", "200", "300", "350",
+                                    "400", "500", "550", "600", "700", "800", "900")),
+                            VisibilityState.HIDDEN);
 
                 } else {
                     Log.d(TAG, "Loading map failed: mapError: " + mapError.name());

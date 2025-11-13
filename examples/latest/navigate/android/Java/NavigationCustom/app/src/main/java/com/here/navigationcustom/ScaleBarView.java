@@ -29,6 +29,10 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
+import com.here.sdk.core.GeoCoordinates;
+import com.here.sdk.core.Point2D;
+import com.here.sdk.mapview.MapView;
+
 public class ScaleBarView extends View {
 
     private static final int MAP_ZOOM_LEVEL_MIN = 0;
@@ -71,11 +75,17 @@ public class ScaleBarView extends View {
     private int scaleValue = 0;
     private String scaleText = "";
     private float barWidth = 100; // Default width in pixels
+    
+    private MapView mapView;
+    private int screenWidth = 0;
+    private int screenHeight = 0;
+    private double currentZoomLevel = 0;
 
     private static final int PADDING = 8;
     private static final int BAR_HEIGHT = 4;
     private static final int TICK_HEIGHT = 12;
     private static final int TEXT_SIZE = 28;
+    private static final String TAG = "ScaleBarView";
 
     public ScaleBarView(Context context) {
         super(context);
@@ -110,6 +120,15 @@ public class ScaleBarView extends View {
         backgroundPaint.setStyle(Paint.Style.FILL);
         backgroundPaint.setAntiAlias(true);
     }
+    
+    /**
+     * Set the MapView reference for calculating scale bar width
+     *
+     * @param mapView The MapView instance
+     */
+    public void setMapView(MapView mapView) {
+        this.mapView = mapView;
+    }
 
     /**
      * Update the scale bar based on the current zoom level
@@ -117,15 +136,22 @@ public class ScaleBarView extends View {
      * @param zoomLevel The current map zoom level
      */
     public void updateScale(double zoomLevel) {
+        this.currentZoomLevel = zoomLevel;
         int index = (int) Math.round(zoomLevel);
         if (index >= MAP_ZOOM_LEVEL_MIN && index <= MAP_ZOOM_LEVEL_MAX) {
             int[] distanceAndScale = LEVEL_TO_DISTANCE_AND_SCALE[index];
             scaleValue = distanceAndScale[1];
             scaleText = formatScaleText(scaleValue);
 
-            // Calculate bar width based on screen density and zoom level
-            barWidth = calculateBarWidth(distanceAndScale[0], scaleValue);
-            Log.d(TAG, "updateScale: ");
+            // Update screen dimensions
+            if (mapView != null) {
+                screenWidth = mapView.getWidth();
+                screenHeight = mapView.getHeight();
+            }
+
+            // Calculate bar width using the new method
+            barWidth = getScaleLineLength();
+            Log.d("updateScale: ", " ZoomLevel: " + zoomLevel + " ScaleValue: " + scaleValue + " BarWidth: " + barWidth);
             invalidate(); // Redraw the view
         }
     }
@@ -148,6 +174,51 @@ public class ScaleBarView extends View {
         // Adjust width proportionally to the scale value
         float ratio = (float) scaleValue / (float) maxDistance;
         return Math.max(50 * density, baseWidth * ratio);
+    }
+    
+    /**
+     * Get the scale value based on the current zoom level
+     * This replaces MapConstants.getScaleVal()
+     */
+    private int getScaleVal(double zoomLevel) {
+        int index = (int) Math.round(zoomLevel);
+        if (index >= MAP_ZOOM_LEVEL_MIN && index <= MAP_ZOOM_LEVEL_MAX) {
+            return LEVEL_TO_DISTANCE_AND_SCALE[index][1];
+        }
+        return 0;
+    }
+    
+    /**
+     * Calculate the scale line length based on actual map distance
+     * This method calculates the bar width by measuring the distance between
+     * two screen edge points and proportionally scaling the scale value
+     */
+    private int getScaleLineLength() {
+        if (mapView == null || screenWidth == 0 || screenHeight == 0) {
+            Log.w(TAG, "getScaleLineLength error, mapView or screen dimensions not initialized");
+            return 100; // Return default width
+        }
+        
+        // Screen two edge points coordinates
+        GeoCoordinates left = mapView.viewToGeoCoordinates(new Point2D(0, screenHeight));
+        GeoCoordinates right = mapView.viewToGeoCoordinates(new Point2D(screenWidth, screenHeight));
+        
+        if (left == null || right == null) {
+            Log.w(TAG, "getScaleLineLength error, geoCoordinates is null");
+            return 100; // Return default width
+        }
+        
+        // Distance between the two screen edge points
+        double distance = left.distanceTo(right);
+        
+        if (distance == 0) {
+            Log.w(TAG, "getScaleLineLength error, distance is zero");
+            return 100; // Return default width
+        }
+        
+        // Return the corresponding scale bar length
+        int scaleVal = getScaleVal(currentZoomLevel);
+        return (int) (scaleVal / distance * screenWidth);
     }
 
     @Override
