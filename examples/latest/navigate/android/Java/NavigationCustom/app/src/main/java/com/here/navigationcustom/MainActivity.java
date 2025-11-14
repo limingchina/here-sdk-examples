@@ -27,9 +27,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
-import android.widget.Button;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -42,6 +44,7 @@ import com.here.sdk.core.Anchor2D;
 import com.here.sdk.core.Color;
 import com.here.sdk.core.GeoCoordinates;
 import com.here.sdk.core.GeoCoordinatesUpdate;
+import com.here.sdk.core.GeoOrientation;
 import com.here.sdk.core.GeoOrientationUpdate;
 import com.here.sdk.core.Location;
 import com.here.sdk.core.LocationListener;
@@ -105,6 +108,40 @@ public class MainActivity extends AppCompatActivity {
     );
     private static final List<Double> CAMERA_ZOOM_LEVEL_SEQUENCE = Arrays.asList(14.0, 17.0, 19.5);
     private static final long CAMERA_ZOOM_DELAY_MILLIS = 3000L;
+    private static final String EXTRA_STYLE_JSON = "{\n"
+        + "  \"definitions\": {\n"
+        + "    \"General.Labels.Scale.Factor\": 2.0,\n"
+        + "    \"Is.Area.WithOutline\": false,\n"
+        + "    \"Is.Area.WithSecondOutline\": false,\n"
+        + "    \"Landuse.MinZoomLevel\": 10,\n"
+        + "    \"BuildingAddress.MinZoomLevel\": 30,\n"
+        + "    \"Building.MinZoomLevel\": 18,\n"
+        + "    \"Building.Label.MinZoomLevel\": 19,\n"
+        + "    \"ExtrudedBuilding.Special.MinZoomLevel\": 18,\n"
+        + "    \"ExtrudedBuilding.MinZoomLevel\": 18,\n"
+        + "    \"Street.Category3.SimpleLine.MinZoomLevel\": 14,\n"
+        + "    \"Street.Category4.SimpleLine.MinZoomLevel\": 16,\n"
+        + "    \"Street.Pedestrian.SimpleLine.MinZoomLevel\": 30,\n"
+        + "    \"Street.Walkway.SimpleLine.MinZoomLevel\": 30\n"
+        + "  }\n"
+        + "}";
+    private static final String ORIGINAL_STYLE_JSON = "{\n"
+        + "  \"definitions\": {\n"
+        + "    \"General.Labels.Scale.Factor\": 2.0,\n"
+        + "    \"Is.Area.WithOutline\": true,\n"
+        + "    \"Is.Area.WithSecondOutline\": true,\n"
+        + "    \"Landuse.MinZoomLevel\": 0,\n"
+        + "    \"BuildingAddress.MinZoomLevel\": 30,\n"
+        + "    \"Building.MinZoomLevel\": 17,\n"
+        + "    \"Building.Label.MinZoomLevel\": 17,\n"
+        + "    \"ExtrudedBuilding.Special.MinZoomLevel\": 16,\n"
+        + "    \"ExtrudedBuilding.MinZoomLevel\": 17,\n"
+        + "    \"Street.Category3.SimpleLine.MinZoomLevel\": 11,\n"
+        + "    \"Street.Category4.SimpleLine.MinZoomLevel\": 13.5,\n"
+        + "    \"Street.Pedestrian.SimpleLine.MinZoomLevel\": 15.5,\n"
+        + "    \"Street.Walkway.SimpleLine.MinZoomLevel\": 15.5\n"
+        + "  }\n"
+        + "}";
 
     private PermissionsRequestor permissionsRequestor;
     private MapView mapView;
@@ -132,6 +169,13 @@ public class MainActivity extends AppCompatActivity {
     private EditText guidanceFrameRateInput;
     private Button setMapViewFrameRateButton;
     private Button setGuidanceFrameRateButton;
+    private CheckBox tiltLimitCheckBox;
+    private CheckBox extraStyleCheckBox;
+    private boolean tiltLimitingEnabled = true;
+    private boolean extraStyleEnabled = true;
+    private boolean mapSceneConfiguredOnce;
+
+    private MapCameraListener scaleBarCameraListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -159,7 +203,26 @@ public class MainActivity extends AppCompatActivity {
         guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
         setMapViewFrameRateButton = findViewById(R.id.set_mapview_framerate_button);
         setGuidanceFrameRateButton = findViewById(R.id.set_guidance_framerate_button);
+        tiltLimitCheckBox = findViewById(R.id.tilt_limit_checkbox);
+        extraStyleCheckBox = findViewById(R.id.extra_style_checkbox);
         cameraZoomHandler = new Handler(Looper.getMainLooper());
+
+        tiltLimitCheckBox.setChecked(tiltLimitingEnabled);
+        extraStyleCheckBox.setChecked(extraStyleEnabled);
+
+        tiltLimitCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                onTiltLimitingChanged(isChecked);
+            }
+        });
+
+        extraStyleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                onExtraStyleChanged(isChecked);
+            }
+        });
 
         handleAndroidPermissions();
 
@@ -220,88 +283,149 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMapScene() {
-        //routeStartGeoCoordinates = new GeoCoordinates(52.520798, 13.409408);
-        // Hong Kong
-        routeStartGeoCoordinates = new GeoCoordinates(22.28109, 114.16575);
-        // Configure the map.
-        MapMeasure mapMeasureZoom = new MapMeasure(MapMeasure.Kind.DISTANCE_IN_METERS, DISTANCE_IN_METERS);
-        mapView.getCamera().lookAt(
-                routeStartGeoCoordinates, mapMeasureZoom);
+        loadMapScene(null);
+    }
 
-        // Load a scene from the HERE SDK to render the map with a map scheme.
+    private void loadMapScene(@Nullable MapCamera.State cameraStateToRestore) {
+        final MapCamera.State stateToRestore = cameraStateToRestore;
         mapView.getMapScene().loadScene(MapScheme.NORMAL_DAY, new MapScene.LoadSceneCallback() {
             @Override
             public void onLoadScene(@Nullable MapError mapError) {
                 if (mapError == null) {
-                    // Enable a few map layers that might be useful to see for drivers.
-                    Map<String, String> mapFeatures = new HashMap<>();
-                    mapFeatures.put(MapFeatures.TRAFFIC_FLOW, MapFeatureModes.TRAFFIC_FLOW_WITHOUT_FREE_FLOW);
-                    mapFeatures.put(MapFeatures.TRAFFIC_INCIDENTS, MapFeatureModes.DEFAULT);
-
-                    mapView.getMapScene().enableFeatures(mapFeatures);
-                    String ExtraStyle = "{\n"
-                            + "  \"definitions\": {\n"
-                            + "    \"General.Labels.Scale.Factor\": 2.0,\n"
-                            + "    \"Is.Area.WithOutline\": false,\n"
-                            + "    \"Is.Area.WithSecondOutline\": false,\n"
-                            + "    \"Landuse.MinZoomLevel\": 10,\n"
-                            + "    \"BuildingAddress.MinZoomLevel\": 30,\n "
-                            + "    \"Building.MinZoomLevel\": 18,\n "
-                            + "    \"Building.Label.MinZoomLevel\": 19,\n "
-                            + "    \"ExtrudedBuilding.Special.MinZoomLevel\": 18,\n"
-                            + "    \"ExtrudedBuilding.MinZoomLevel\": 18, \n"
-                            + "    \"Street.Category3.SimpleLine.MinZoomLevel\": 14, \n" // Changed from 11
-                            + "    \"Street.Category4.SimpleLine.MinZoomLevel\": 16, \n" // Changed from 13.5
-                            + "    \"Street.Pedestrian.SimpleLine.MinZoomLevel\": 30, \n"
-                            + "    \"Street.Walkway.SimpleLine.MinZoomLevel\": 30 \n"
-                            + "  }\n"
-                            + "}";
-                    try {
-                        Style style = JsonStyleFactory.createFromString(ExtraStyle);
-                        mapView.getHereMap().getStyle().update(style);
-                    } catch (JsonStyleFactory.InstantiationException e) {
-                        throw new RuntimeException(e);
-                    }
-                    defaultLocationIndicator = createDefaultLocationIndicator();
-                    customLocationIndicator = createCustomLocationIndicator();
-
-                    // We start with the built-in default LocationIndicator.
-                    isDefaultLocationIndicator = true;
-                    switchToPedestrianLocationIndicator();
-                    // Update ScaleBarView when the zoom level changes.
-                    mapView.getCamera().addListener(new MapCameraListener() {
-                        @Override
-                        public void onMapCameraUpdated(@NonNull MapCamera.State cameraState) {
-                            double zoomLevel = cameraState.zoomLevel;
-                            scaleBarView.updateScale(zoomLevel);
-                        }
-                    });
-                    // Initialize scale bar with current zoom level
-                    scaleBarView.updateScale(mapView.getCamera().getState().zoomLevel);
-                    MapContentSettings.setPoiCategoriesVisibility(
-                            new ArrayList<>(Arrays.asList("100", "200", "300", "350",
-                                    "400", "500", "550", "600", "700", "800", "900")),
-                            VisibilityState.VISIBLE);
-                    mapView.getCamera().getLimits().setZoomRange(new MapMeasureRange(
-                            MapMeasure.Kind.ZOOM_LEVEL, 6.0, 21.0)
-                    );
-                    // Set the initial MapView framerate using the default value
-                    setMapViewFrameRateClicked(mapView);
-                    if (tiltRestorer == null) {
-                        tiltRestorer = new InterpolatedTiltRestorer(
-                                mapView.getCamera(),
-                                DEFAULT_TILT_SAMPLES,
-                                TiltPreference.MAX,
-                                0.01
-                        );
-                        mapView.getCamera().addListener(tiltRestorer);
-                    }
-                    tiltRestorer.enforce();
+                    onMapSceneLoaded(stateToRestore);
                 } else {
                     Log.d(TAG, "Loading map failed: mapError: " + mapError.name());
                 }
             }
         });
+    }
+
+    private void onMapSceneLoaded(@Nullable MapCamera.State cameraStateToRestore) {
+        if (cameraStateToRestore != null) {
+            restoreCameraState(cameraStateToRestore);
+        } else {
+            if (routeStartGeoCoordinates == null) {
+                // Berlin
+                //routeStartGeoCoordinates = new GeoCoordinates(52.520798, 13.409408);
+                // Hong Kong
+                routeStartGeoCoordinates = new GeoCoordinates(22.28109, 114.16575);
+            }
+            MapMeasure mapMeasureZoom = new MapMeasure(MapMeasure.Kind.DISTANCE_IN_METERS, DISTANCE_IN_METERS);
+            mapView.getCamera().lookAt(routeStartGeoCoordinates, mapMeasureZoom);
+        }
+
+        applyMapFeatures();
+
+        if (tiltRestorer == null) {
+            tiltRestorer = new InterpolatedTiltRestorer(
+                    mapView.getCamera(),
+                    DEFAULT_TILT_SAMPLES,
+                    TiltPreference.MAX,
+                    0.01
+            );
+            mapView.getCamera().addListener(tiltRestorer);
+        }
+
+        if (!mapSceneConfiguredOnce) {
+            scaleBarCameraListener = new MapCameraListener() {
+                @Override
+                public void onMapCameraUpdated(@NonNull MapCamera.State cameraState) {
+                    scaleBarView.updateScale(cameraState.zoomLevel);
+                }
+            };
+            mapView.getCamera().addListener(scaleBarCameraListener);
+            defaultLocationIndicator = createDefaultLocationIndicator();
+            customLocationIndicator = createCustomLocationIndicator();
+            isDefaultLocationIndicator = true;
+            switchToPedestrianLocationIndicator();
+            setMapViewFrameRateClicked(mapView);
+        } else if (visualNavigator != null && visualNavigator.isRendering()) {
+            switchToNavigationLocationIndicator();
+        } else {
+            switchToPedestrianLocationIndicator();
+        }
+
+        if (tiltRestorer != null) {
+            tiltRestorer.setEnabled(tiltLimitingEnabled);
+            if (tiltLimitingEnabled) {
+                tiltRestorer.enforce();
+            }
+        }
+
+        if (extraStyleEnabled) {
+            applyExtraStyle();
+        } else {
+            applyOriginalStyle();
+        }
+
+        scaleBarView.updateScale(mapView.getCamera().getState().zoomLevel);
+
+        mapSceneConfiguredOnce = true;
+    }
+
+    private void applyMapFeatures() {
+        Map<String, String> mapFeatures = new HashMap<>();
+        mapFeatures.put(MapFeatures.TRAFFIC_FLOW, MapFeatureModes.TRAFFIC_FLOW_WITHOUT_FREE_FLOW);
+        mapFeatures.put(MapFeatures.TRAFFIC_INCIDENTS, MapFeatureModes.DEFAULT);
+        mapView.getMapScene().enableFeatures(mapFeatures);
+
+        MapContentSettings.setPoiCategoriesVisibility(
+                new ArrayList<>(Arrays.asList("100", "200", "300", "350",
+                        "400", "500", "550", "600", "700", "800", "900")),
+                VisibilityState.VISIBLE); // Switch to hidden to disable POIs
+
+        mapView.getCamera().getLimits().setZoomRange(new MapMeasureRange(
+                MapMeasure.Kind.ZOOM_LEVEL, 6.0, 21.0)
+        );
+    }
+
+    private void applyExtraStyle() {
+        try {
+            Style extraStyle = JsonStyleFactory.createFromString(EXTRA_STYLE_JSON);
+            mapView.getHereMap().getStyle().update(extraStyle);
+        } catch (JsonStyleFactory.InstantiationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void applyOriginalStyle() {
+        try {
+            Style originalStyle = JsonStyleFactory.createFromString(ORIGINAL_STYLE_JSON);
+            mapView.getHereMap().getStyle().update(originalStyle);
+        } catch (JsonStyleFactory.InstantiationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void restoreCameraState(@NonNull MapCamera.State cameraState) {
+        GeoOrientation orientation = cameraState.orientationAtTarget;
+        Double bearing = orientation != null ? orientation.bearing : null;
+        double tilt = orientation != null ? orientation.tilt : 0.0;
+        GeoOrientationUpdate orientationUpdate = new GeoOrientationUpdate(bearing, tilt);
+        MapMeasure mapMeasure = new MapMeasure(MapMeasure.Kind.ZOOM_LEVEL, cameraState.zoomLevel);
+        mapView.getCamera().lookAt(cameraState.targetCoordinates, orientationUpdate, mapMeasure);
+    }
+
+    private void onTiltLimitingChanged(boolean enabled) {
+        tiltLimitingEnabled = enabled;
+        if (tiltRestorer != null) {
+            tiltRestorer.setEnabled(enabled);
+            if (enabled) {
+                tiltRestorer.enforce();
+            }
+        }
+    }
+
+    private void onExtraStyleChanged(boolean enabled) {
+        extraStyleEnabled = enabled;
+        if (!mapSceneConfiguredOnce || mapView == null) {
+            return;
+        }
+        if (enabled) {
+            applyExtraStyle();
+        } else {
+            applyOriginalStyle();
+        }
     }
 
     private LocationIndicator createDefaultLocationIndicator() {
@@ -348,7 +472,6 @@ public class MainActivity extends AppCompatActivity {
         //Waypoint destinationWaypoint = new Waypoint(new GeoCoordinates(52.530905, 13.385007));
         // Hong Kong
         Waypoint destinationWaypoint = new Waypoint(new GeoCoordinates(22.315874, 114.175041));
-
         routingEngine.calculateRoute(
                 new ArrayList<>(Arrays.asList(startWaypoint, destinationWaypoint)),
                 new CarOptions(),
@@ -379,24 +502,73 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void performCameraZoomStep() {
-        if (!cameraZoomSequenceActive || mapView == null) {
-            return;
-        }
 
-        if (cameraZoomStepIndex >= CAMERA_ZOOM_LEVEL_SEQUENCE.size()) {
-            stopCameraZoomSequence();
-            return;
-        }
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
 
-        MapCamera camera = mapView.getCamera();
-        if (camera == null) {
-            stopCameraZoomSequence();
-            return;
-        }
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                HashMap<Integer, Integer> scaleMap = new HashMap<>();
+                scaleMap.put(0, 18);//100 - 500m
+                scaleMap.put(1, 17);//500M - 1km
+                scaleMap.put(2, 16);//1KM -5KM
+                scaleMap.put(3, 15);//5KM -
+                scaleMap.put(4, 14);
+                scaleMap.put(5, 13);
+                scaleMap.put(6, 12);
+                scaleMap.put(7, 11);
+                scaleMap.put(8, 10);
+                scaleMap.put(9, 9);
+                scaleMap.put(10, 8);
+                scaleMap.put(11, 7);
+                scaleMap.put(12, 6);
+                try {
+                    for (int i = 0; i < scaleMap.size(); i++) {
+                        for (int j = 0; j < 20; j++) {
+                            double currentScale = scaleMap.get(i) - j * 0.05;
+                            mapView.getCamera().zoomTo(currentScale);
+                            Thread.sleep(100); // 20HZ
+                        }
+                        Thread.sleep(500);
+                    }
+                    Thread.sleep(3000);
+                    for (int i = (scaleMap.size() - 1); i > 0; i--) {
+                        for (int j = 0; j < 20; j++) {
+                            double currentScale = scaleMap.get(i) + j * 0.05;
+                            mapView.getCamera().zoomTo(currentScale);
+                            Thread.sleep(100); // 20HZ
+                        }
+                        Thread.sleep(500);
+                    }
+                    Thread.sleep(3000);
+                    scaleMap.clear();
+                    scaleMap.put(0, 22);//100 - 500m
+                    scaleMap.put(1, 21);//100 - 500m
+                    scaleMap.put(2, 20);//100 - 500m
+                    scaleMap.put(3, 19);//100 - 500m
+                    scaleMap.put(4, 18);//100 - 500m
+                    for (int i = (scaleMap.size() - 1); i > 0; i--) {
+                        for (int j = 0; j < 20; j++) {
+                            double currentScale = scaleMap.get(i) + j * 0.05;
+                            mapView.getCamera().zoomTo(currentScale);
+                            Thread.sleep(100); // 20HZ
+                        }
+                        Thread.sleep(500);
+                    }
+                    Thread.sleep(3000);
+                    for (int i = 0; i < scaleMap.size(); i++) {
+                        for (int j = 0; j < 20; j++) {
+                            double currentScale = scaleMap.get(i) - j * 0.05;
+                            mapView.getCamera().zoomTo(currentScale);
+                            Thread.sleep(100); // 20HZ
+                        }
+                        Thread.sleep(500);
+                    }
+                } catch (Exception e) {
 
-        double targetZoomLevel = CAMERA_ZOOM_LEVEL_SEQUENCE.get(cameraZoomStepIndex);
-        camera.zoomTo(targetZoomLevel);
-        scheduleNextZoomStep();
+                }
+            }
+        });
     }
 
     private void scheduleNextZoomStep() {
@@ -682,8 +854,10 @@ public class MainActivity extends AppCompatActivity {
         animateToDefaultMapPerspective();
 
         if (tiltRestorer != null) {
-            tiltRestorer.setEnabled(true);
-            tiltRestorer.enforce();
+            tiltRestorer.setEnabled(tiltLimitingEnabled);
+            if (tiltLimitingEnabled) {
+                tiltRestorer.enforce();
+            }
         }
 
         // Update UI to reflect that guidance is no longer active.
