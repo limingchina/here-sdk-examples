@@ -151,7 +151,7 @@ public class ScaleBarView extends View {
 
             // Calculate bar width using the new method
             barWidth = getScaleLineLength();
-            Log.d("updateScale: ", " ZoomLevel: " + zoomLevel + " ScaleValue: " + scaleValue + " BarWidth: " + barWidth);
+            //Log.d("updateScale: ", " ZoomLevel: " + zoomLevel + " ScaleValue: " + scaleValue + " BarWidth: " + barWidth);
             invalidate(); // Redraw the view
         }
     }

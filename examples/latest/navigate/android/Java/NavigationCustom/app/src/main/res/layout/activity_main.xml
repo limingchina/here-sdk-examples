@@ -90,7 +90,7 @@
             android:layout_width="80dp"
             android:layout_height="wrap_content"
             android:inputType="number"
-            android:hint="60"
+            android:text="20"
             android:textSize="14sp" />
 
         <Button
@@ -128,7 +128,7 @@
             android:layout_width="80dp"
             android:layout_height="wrap_content"
             android:inputType="number"
-            android:hint="30"
+            android:text="10"
             android:textSize="14sp" />
 
         <Button

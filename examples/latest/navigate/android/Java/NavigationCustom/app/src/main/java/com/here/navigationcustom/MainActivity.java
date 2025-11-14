@@ -47,6 +47,7 @@ import com.here.sdk.core.engine.AuthenticationMode;
 import com.here.sdk.core.engine.SDKNativeEngine;
 import com.here.sdk.core.engine.SDKOptions;
 import com.here.sdk.core.errors.InstantiationErrorException;
+import com.here.sdk.mapview.JsonStyleFactory;
 import com.here.sdk.mapview.LocationIndicator;
 import com.here.sdk.mapview.MapCamera;
 import com.here.sdk.mapview.MapCameraAnimation;
@@ -58,9 +59,11 @@ import com.here.sdk.mapview.MapFeatureModes;
 import com.here.sdk.mapview.MapFeatures;
 import com.here.sdk.mapview.MapMarker3DModel;
 import com.here.sdk.mapview.MapMeasure;
+import com.here.sdk.mapview.MapMeasureRange;
 import com.here.sdk.mapview.MapScene;
 import com.here.sdk.mapview.MapScheme;
 import com.here.sdk.mapview.MapView;
+import com.here.sdk.mapview.Style;
 import com.here.sdk.mapview.VisibilityState;
 import com.here.sdk.navigation.FixedCameraBehavior;
 import com.here.sdk.navigation.LocationSimulator;
@@ -79,6 +82,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import com.here.sdk.units.core.utils.EnvironmentLogger;
 import com.here.sdk.units.core.utils.PermissionsRequestor;
@@ -88,6 +92,13 @@ public class MainActivity extends AppCompatActivity {
     private EnvironmentLogger environmentLogger = new EnvironmentLogger();
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final double DISTANCE_IN_METERS = 1000;
+    private static final List<TiltSample> DEFAULT_TILT_SAMPLES = Arrays.asList(
+        new TiltSample(4.0, 0.0, 5.0),
+        new TiltSample(8.0, 0.0, 15.0),
+        new TiltSample(12.0, 0.0, 20.0),
+        new TiltSample(16.0, 0.0, 40.0),
+        new TiltSample(19.0, 0.0, 60.0)
+    );
 
     private PermissionsRequestor permissionsRequestor;
     private MapView mapView;
@@ -98,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
     private LocationIndicator defaultLocationIndicator;
     private LocationIndicator customLocationIndicator;
     private Location lastKnownLocation = null;
+    private InterpolatedTiltRestorer tiltRestorer;
     private GeoCoordinates routeStartGeoCoordinates;
     private boolean isDefaultLocationIndicator = true;
     private boolean isCustomHaloColor;
@@ -198,8 +210,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMapScene() {
-        routeStartGeoCoordinates = new GeoCoordinates(52.520798, 13.409408);
-
+        //routeStartGeoCoordinates = new GeoCoordinates(52.520798, 13.409408);
+        // Hong Kong
+        routeStartGeoCoordinates = new GeoCoordinates(22.28109, 114.16575);
         // Configure the map.
         MapMeasure mapMeasureZoom = new MapMeasure(MapMeasure.Kind.DISTANCE_IN_METERS, DISTANCE_IN_METERS);
         mapView.getCamera().lookAt(
@@ -216,7 +229,29 @@ public class MainActivity extends AppCompatActivity {
                     mapFeatures.put(MapFeatures.TRAFFIC_INCIDENTS, MapFeatureModes.DEFAULT);
 
                     mapView.getMapScene().enableFeatures(mapFeatures);
-
+                    String ExtraStyle = "{\n"
+                            + "  \"definitions\": {\n"
+                            + "    \"General.Labels.Scale.Factor\": 1.0,\n"
+                            + "    \"Is.Area.WithOutline\": false,\n"
+                            + "    \"Is.Area.WithSecondOutline\": false,\n"
+                            + "    \"Landuse.MinZoomLevel\": 10,\n"
+                            + "    \"BuildingAddress.MinZoomLevel\": 30,\n "
+                            + "    \"Building.MinZoomLevel\": 18,\n "
+                            + "    \"Building.Label.MinZoomLevel\": 19,\n "
+                            + "    \"ExtrudedBuilding.Special.MinZoomLevel\": 18,\n"
+                            + "    \"ExtrudedBuilding.MinZoomLevel\": 18, \n"
+                            + "    \"Street.Category3.SimpleLine.MinZoomLevel\": 14, \n" // Changed from 11
+                            + "    \"Street.Category4.SimpleLine.MinZoomLevel\": 16, \n" // Changed from 13.5
+                            + "    \"Street.Pedestrian.SimpleLine.MinZoomLevel\": 30, \n"
+                            + "    \"Street.Walkway.SimpleLine.MinZoomLevel\": 30 \n"
+                            + "  }\n"
+                            + "}";
+                    try {
+                        Style style = JsonStyleFactory.createFromString(ExtraStyle);
+                        mapView.getHereMap().getStyle().update(style);
+                    } catch (JsonStyleFactory.InstantiationException e) {
+                        throw new RuntimeException(e);
+                    }
                     defaultLocationIndicator = createDefaultLocationIndicator();
                     customLocationIndicator = createCustomLocationIndicator();
 
@@ -237,7 +272,21 @@ public class MainActivity extends AppCompatActivity {
                             new ArrayList<>(Arrays.asList("100", "200", "300", "350",
                                     "400", "500", "550", "600", "700", "800", "900")),
                             VisibilityState.HIDDEN);
-
+                    mapView.getCamera().getLimits().setZoomRange(new MapMeasureRange(
+                            MapMeasure.Kind.ZOOM_LEVEL, 6.0, 20.0)
+                    );
+                    // Set the initial MapView framerate using the default value
+                    setMapViewFrameRateClicked(mapView);
+                    if (tiltRestorer == null) {
+                        tiltRestorer = new InterpolatedTiltRestorer(
+                                mapView.getCamera(),
+                                DEFAULT_TILT_SAMPLES,
+                                TiltPreference.MAX,
+                                0.01
+                        );
+                        mapView.getCamera().addListener(tiltRestorer);
+                    }
+                    tiltRestorer.enforce();
                 } else {
                     Log.d(TAG, "Loading map failed: mapError: " + mapError.name());
                 }
@@ -286,7 +335,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Waypoint startWaypoint = new Waypoint(getLastKnownLocation().coordinates);
-        Waypoint destinationWaypoint = new Waypoint(new GeoCoordinates(52.530905, 13.385007));
+        //Waypoint destinationWaypoint = new Waypoint(new GeoCoordinates(52.530905, 13.385007));
+        // Hong Kong
+        Waypoint destinationWaypoint = new Waypoint(new GeoCoordinates(22.315874, 114.175041));
+
         routingEngine.calculateRoute(
                 new ArrayList<>(Arrays.asList(startWaypoint, destinationWaypoint)),
                 new CarOptions(),
@@ -366,7 +418,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Framerate must be between 1 and 120", Toast.LENGTH_SHORT).show();
                 return;
             }
-
+            // Set the initial framerate for guidance rendering.
             visualNavigator.setGuidanceFrameRate(frameRate);
             Toast.makeText(this, "Guidance framerate set to " + frameRate + " FPS", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "Guidance framerate set to: " + frameRate);
@@ -504,7 +556,10 @@ public class MainActivity extends AppCompatActivity {
         if (visualNavigator.isRendering()) {
             return;
         }
-
+        setGuidanceFrameRateClicked(mapView);
+        if (tiltRestorer != null) {
+            tiltRestorer.setEnabled(false);
+        }
         // Set the route and maneuver arrow color.
         customizeVisualNavigatorColors();
 
@@ -541,6 +596,11 @@ public class MainActivity extends AppCompatActivity {
         switchToPedestrianLocationIndicator();
 
         animateToDefaultMapPerspective();
+
+        if (tiltRestorer != null) {
+            tiltRestorer.setEnabled(true);
+            tiltRestorer.enforce();
+        }
 
         // Update UI to reflect that guidance is no longer active.
         updateFramerateUIState();
@@ -640,6 +700,9 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         visualNavigator.stopRendering();
         locationSimulator.stop();
+        if (tiltRestorer != null) {
+            mapView.getCamera().removeListener(tiltRestorer);
+        }
         mapView.onDestroy();
         disposeHERESDK();
         super.onDestroy();
@@ -661,6 +724,121 @@ public class MainActivity extends AppCompatActivity {
             // For safety reasons, we explicitly set the shared instance to null to avoid situations,
             // where a disposed instance is accidentally reused.
             SDKNativeEngine.setSharedInstance(null);
+        }
+    }
+
+    private enum TiltPreference { MIN, MAX }
+
+    private static final class TiltSample {
+        final double zoomLevel;
+        final double minTiltDeg;
+        final double maxTiltDeg;
+
+        private TiltSample(double zoomLevel, double minTiltDeg, double maxTiltDeg) {
+            this.zoomLevel = zoomLevel;
+            this.minTiltDeg = minTiltDeg;
+            this.maxTiltDeg = maxTiltDeg;
+        }
+    }
+
+    private static final class InterpolatedTiltRestorer implements MapCameraListener {
+        private final MapCamera camera;
+        private final List<TiltSample> samples;
+        private final TiltPreference preference;
+        private final double toleranceDeg;
+        private boolean ignoreNextUpdate;
+    private boolean enabled = true;
+
+        private InterpolatedTiltRestorer(MapCamera camera,
+                                         List<TiltSample> samples,
+                                         TiltPreference preference,
+                                         double toleranceDeg) {
+            this.camera = camera;
+            this.samples = new ArrayList<>(samples);
+            this.samples.sort((a, b) -> Double.compare(a.zoomLevel, b.zoomLevel));
+            this.preference = preference;
+            this.toleranceDeg = toleranceDeg;
+        }
+
+        @Override
+        public void onMapCameraUpdated(@NonNull MapCamera.State state) {
+            if (ignoreNextUpdate) {
+                ignoreNextUpdate = false;
+                return;
+            }
+            if (!enabled) {
+                return;
+            }
+            if (samples.isEmpty()) {
+                return;
+            }
+
+            double targetTilt = desiredTiltForZoom(state.zoomLevel);
+            double currentTilt = state.orientationAtTarget.tilt;
+
+            if (Math.abs(currentTilt - targetTilt) <= toleranceDeg) {
+                return;
+            }
+
+            ignoreNextUpdate = true;
+            camera.setOrientationAtTarget(new GeoOrientationUpdate(null, targetTilt));
+        }
+
+        void enforce() {
+            if (!enabled || samples.isEmpty()) {
+                return;
+            }
+
+            MapCamera.State state = camera.getState();
+            double targetTilt = desiredTiltForZoom(state.zoomLevel);
+            ignoreNextUpdate = true;
+            camera.setOrientationAtTarget(new GeoOrientationUpdate(null, targetTilt));
+        }
+
+        void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+            ignoreNextUpdate = false;
+        }
+
+        private double desiredTiltForZoom(double zoom) {
+            TiltSample first = samples.get(0);
+            TiltSample last = samples.get(samples.size() - 1);
+
+            if (zoom <= first.zoomLevel) {
+                return preference == TiltPreference.MAX ? first.maxTiltDeg : first.minTiltDeg;
+            }
+            if (zoom >= last.zoomLevel) {
+                return preference == TiltPreference.MAX ? last.maxTiltDeg : last.minTiltDeg;
+            }
+
+            TiltSample lower = first;
+            for (int i = 1; i < samples.size(); i++) {
+                TiltSample upper = samples.get(i);
+                if (zoom < upper.zoomLevel) {
+                    double t = interpolationFactor(lower.zoomLevel, upper.zoomLevel, zoom);
+                    double minTilt = lerp(lower.minTiltDeg, upper.minTiltDeg, t);
+                    double maxTilt = lerp(lower.maxTiltDeg, upper.maxTiltDeg, t);
+                    return preference == TiltPreference.MAX ? maxTilt : minTilt;
+                }
+                lower = upper;
+            }
+
+            return preference == TiltPreference.MAX ? last.maxTiltDeg : last.minTiltDeg;
+        }
+
+        private double interpolationFactor(double z0, double z1, double z) {
+            double log0 = Math.log(z0 + 1.0);
+            double log1 = Math.log(z1 + 1.0);
+            double logZ = Math.log(z + 1.0);
+            double denominator = log1 - log0;
+            if (Math.abs(denominator) <= 1e-9) {
+                return 0.0;
+            }
+            return (logZ - log0) / denominator;
+        }
+
+        private double lerp(double start, double end, double t) {
+            return start + (end - start) * t;
         }
     }
 
