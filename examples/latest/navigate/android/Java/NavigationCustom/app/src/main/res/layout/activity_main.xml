@@ -68,6 +68,32 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/buttons3rdRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_margin="2dp"
+        app:layout_constraintTop_toBottomOf="@+id/buttons2ndRow">
+
+        <Button
+            android:id="@+id/move_to_default_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:onClick="moveToDefaultLocationClicked"
+            android:text="Go to default location" />
+
+        <Button
+            android:id="@+id/cycle_zoom_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:onClick="cycleCameraZoomButtonClicked"
+            android:text="Cycle camera zoom" />
+
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/mapViewFramerateRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -75,7 +101,7 @@
         android:layout_margin="2dp"
         android:padding="4dp"
         android:background="#CCFFFFFF"
-        app:layout_constraintTop_toBottomOf="@+id/buttons2ndRow">
+        app:layout_constraintTop_toBottomOf="@+id/buttons3rdRow">
 
         <TextView
             android:layout_width="wrap_content"

@@ -23,6 +23,8 @@ import static com.here.sdk.mapview.LocationIndicator.IndicatorStyle;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
@@ -43,6 +45,7 @@ import com.here.sdk.core.GeoCoordinatesUpdate;
 import com.here.sdk.core.GeoOrientationUpdate;
 import com.here.sdk.core.Location;
 import com.here.sdk.core.LocationListener;
+import com.here.sdk.core.Point2D;
 import com.here.sdk.core.engine.AuthenticationMode;
 import com.here.sdk.core.engine.SDKNativeEngine;
 import com.here.sdk.core.engine.SDKOptions;
@@ -99,6 +102,9 @@ public class MainActivity extends AppCompatActivity {
         new TiltSample(16.0, 0.0, 40.0),
         new TiltSample(19.0, 0.0, 60.0)
     );
+    private static final List<Double> CAMERA_ZOOM_LEVEL_SEQUENCE = Arrays.asList(14.0, 17.0, 19.5);
+    private static final long CAMERA_ZOOM_DELAY_MILLIS = 3000L;
+    private static final Duration CAMERA_ZOOM_ANIMATION_DURATION = Duration.ofSeconds(1);
 
     private PermissionsRequestor permissionsRequestor;
     private MapView mapView;
@@ -117,6 +123,9 @@ public class MainActivity extends AppCompatActivity {
     private final double defaultHaloAccurarcyInMeters = 30.0;
     private final double cameraTiltInDegrees = 40.0;
     private final double cameraDistanceInMeters = 200.0;
+    private Handler cameraZoomHandler;
+    private boolean cameraZoomSequenceActive;
+    private int cameraZoomStepIndex;
 
     // UI references for framerate controls
     private EditText mapViewFrameRateInput;
@@ -150,6 +159,7 @@ public class MainActivity extends AppCompatActivity {
         guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
         setMapViewFrameRateButton = findViewById(R.id.set_mapview_framerate_button);
         setGuidanceFrameRateButton = findViewById(R.id.set_guidance_framerate_button);
+    cameraZoomHandler = new Handler(Looper.getMainLooper());
 
         handleAndroidPermissions();
 
@@ -273,7 +283,7 @@ public class MainActivity extends AppCompatActivity {
                                     "400", "500", "550", "600", "700", "800", "900")),
                             VisibilityState.HIDDEN);
                     mapView.getCamera().getLimits().setZoomRange(new MapMeasureRange(
-                            MapMeasure.Kind.ZOOM_LEVEL, 6.0, 20.0)
+                            MapMeasure.Kind.ZOOM_LEVEL, 6.0, 21.0)
                     );
                     // Set the initial MapView framerate using the default value
                     setMapViewFrameRateClicked(mapView);
@@ -357,6 +367,91 @@ public class MainActivity extends AppCompatActivity {
         stopGuidance();
     }
 
+    public void cycleCameraZoomButtonClicked(View view) {
+        if (mapView == null) {
+            return;
+        }
+
+        stopCameraZoomSequence();
+        cameraZoomSequenceActive = true;
+        cameraZoomStepIndex = 0;
+        performCameraZoomStep();
+    }
+
+    private void performCameraZoomStep() {
+        //MapCamera camera = mapView.getCamera();
+        //camera.zoomBy(0.5, new Point2D((double) mapView.getWidth() /2, (double) mapView.getHeight() /2));
+
+        if (!cameraZoomSequenceActive || mapView == null) {
+            return;
+        }
+
+        if (cameraZoomStepIndex >= CAMERA_ZOOM_LEVEL_SEQUENCE.size()) {
+            stopCameraZoomSequence();
+            return;
+        }
+
+        MapCamera camera = mapView.getCamera();
+        if (camera == null) {
+            stopCameraZoomSequence();
+            return;
+        }
+        MapCamera.State state = camera.getState();
+        GeoCoordinates targetCoordinates = new GeoCoordinates(state.targetCoordinates.latitude + 0.001,
+                state.targetCoordinates.longitude);
+
+        GeoCoordinatesUpdate coordinatesUpdate = new GeoCoordinatesUpdate(targetCoordinates);
+        //MapMeasure mapMeasure = new MapMeasure(MapMeasure.Kind.ZOOM_LEVEL, CAMERA_ZOOM_LEVEL_SEQUENCE.get(cameraZoomStepIndex));
+        MapMeasure mapMeasure = new MapMeasure(MapMeasure.Kind.ZOOM_LEVEL, 10);
+
+        double bowFactor = 1;
+        MapCameraAnimation animation = MapCameraAnimationFactory.flyTo(
+                coordinatesUpdate,
+                mapMeasure,
+                bowFactor,
+                CAMERA_ZOOM_ANIMATION_DURATION
+        );
+        camera.startAnimation(animation);
+
+        camera.startAnimation(animation, new AnimationListener() {
+            @Override
+            public void onAnimationStateChanged(@NonNull AnimationState animationState) {
+                if (!cameraZoomSequenceActive) {
+                    return;
+                }
+
+                if (animationState == AnimationState.COMPLETED) {
+                    scheduleNextZoomStep();
+                } else if (animationState == AnimationState.CANCELLED) {
+                    stopCameraZoomSequence();
+                }
+            }
+        });
+
+    }
+
+    private void scheduleNextZoomStep() {
+        if (!cameraZoomSequenceActive || cameraZoomHandler == null) {
+            return;
+        }
+
+        cameraZoomStepIndex++;
+        if (cameraZoomStepIndex >= CAMERA_ZOOM_LEVEL_SEQUENCE.size()) {
+            stopCameraZoomSequence();
+            return;
+        }
+
+        cameraZoomHandler.postDelayed(this::performCameraZoomStep, CAMERA_ZOOM_DELAY_MILLIS);
+    }
+
+    private void stopCameraZoomSequence() {
+        cameraZoomSequenceActive = false;
+        cameraZoomStepIndex = 0;
+        if (cameraZoomHandler != null) {
+            cameraZoomHandler.removeCallbacksAndMessages(null);
+        }
+    }
+
     // Toggle between the default LocationIndicator and custom LocationIndicator.
     // The default LocationIndicator uses a 3D asset that is part of the HERE SDK.
     // The custom LocationIndicator uses different 3D assets, see asset folder.
@@ -377,6 +472,25 @@ public class MainActivity extends AppCompatActivity {
         // Toggle state.
         isCustomHaloColor = !isCustomHaloColor;
         setSelectedHaloColor();
+    }
+
+    // Move camera back to the default start location at zoom level 17
+    public void moveToDefaultLocationClicked(View view) {
+        if (routeStartGeoCoordinates == null) {
+            Toast.makeText(this, "Default location not ready", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        MapMeasure mapMeasure = new MapMeasure(
+                MapMeasure.Kind.ZOOM_LEVEL,
+                17.0f);
+        mapView.getCamera().lookAt(routeStartGeoCoordinates, mapMeasure);
+
+        if (tiltRestorer != null) {
+            tiltRestorer.enforce();
+        }
+
+        Log.d(TAG, "Camera moved to default location at zoom level 17.");
     }
 
     // Set the MapView framerate based on user input.
@@ -683,6 +797,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         mapView.onPause();
+        stopCameraZoomSequence();
         // Keep UI state consistent when pausing the activity.
         updateFramerateUIState();
         super.onPause();
@@ -700,6 +815,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         visualNavigator.stopRendering();
         locationSimulator.stop();
+        stopCameraZoomSequence();
         if (tiltRestorer != null) {
             mapView.getCamera().removeListener(tiltRestorer);
         }
