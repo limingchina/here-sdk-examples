@@ -45,7 +45,6 @@ import com.here.sdk.core.GeoCoordinatesUpdate;
 import com.here.sdk.core.GeoOrientationUpdate;
 import com.here.sdk.core.Location;
 import com.here.sdk.core.LocationListener;
-import com.here.sdk.core.Point2D;
 import com.here.sdk.core.engine.AuthenticationMode;
 import com.here.sdk.core.engine.SDKNativeEngine;
 import com.here.sdk.core.engine.SDKOptions;
@@ -68,6 +67,8 @@ import com.here.sdk.mapview.MapScheme;
 import com.here.sdk.mapview.MapView;
 import com.here.sdk.mapview.Style;
 import com.here.sdk.mapview.VisibilityState;
+import com.here.sdk.navigation.CameraBehavior;
+import com.here.sdk.navigation.DynamicCameraBehavior;
 import com.here.sdk.navigation.FixedCameraBehavior;
 import com.here.sdk.navigation.LocationSimulator;
 import com.here.sdk.navigation.LocationSimulatorOptions;
@@ -104,7 +105,6 @@ public class MainActivity extends AppCompatActivity {
     );
     private static final List<Double> CAMERA_ZOOM_LEVEL_SEQUENCE = Arrays.asList(14.0, 17.0, 19.5);
     private static final long CAMERA_ZOOM_DELAY_MILLIS = 3000L;
-    private static final Duration CAMERA_ZOOM_ANIMATION_DURATION = Duration.ofSeconds(1);
 
     private PermissionsRequestor permissionsRequestor;
     private MapView mapView;
@@ -159,7 +159,7 @@ public class MainActivity extends AppCompatActivity {
         guidanceFrameRateInput = findViewById(R.id.guidance_framerate);
         setMapViewFrameRateButton = findViewById(R.id.set_mapview_framerate_button);
         setGuidanceFrameRateButton = findViewById(R.id.set_guidance_framerate_button);
-    cameraZoomHandler = new Handler(Looper.getMainLooper());
+        cameraZoomHandler = new Handler(Looper.getMainLooper());
 
         handleAndroidPermissions();
 
@@ -241,7 +241,7 @@ public class MainActivity extends AppCompatActivity {
                     mapView.getMapScene().enableFeatures(mapFeatures);
                     String ExtraStyle = "{\n"
                             + "  \"definitions\": {\n"
-                            + "    \"General.Labels.Scale.Factor\": 1.0,\n"
+                            + "    \"General.Labels.Scale.Factor\": 2.0,\n"
                             + "    \"Is.Area.WithOutline\": false,\n"
                             + "    \"Is.Area.WithSecondOutline\": false,\n"
                             + "    \"Landuse.MinZoomLevel\": 10,\n"
@@ -281,7 +281,7 @@ public class MainActivity extends AppCompatActivity {
                     MapContentSettings.setPoiCategoriesVisibility(
                             new ArrayList<>(Arrays.asList("100", "200", "300", "350",
                                     "400", "500", "550", "600", "700", "800", "900")),
-                            VisibilityState.HIDDEN);
+                            VisibilityState.VISIBLE);
                     mapView.getCamera().getLimits().setZoomRange(new MapMeasureRange(
                             MapMeasure.Kind.ZOOM_LEVEL, 6.0, 21.0)
                     );
@@ -379,9 +379,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void performCameraZoomStep() {
-        //MapCamera camera = mapView.getCamera();
-        //camera.zoomBy(0.5, new Point2D((double) mapView.getWidth() /2, (double) mapView.getHeight() /2));
-
         if (!cameraZoomSequenceActive || mapView == null) {
             return;
         }
@@ -396,38 +393,10 @@ public class MainActivity extends AppCompatActivity {
             stopCameraZoomSequence();
             return;
         }
-        MapCamera.State state = camera.getState();
-        GeoCoordinates targetCoordinates = new GeoCoordinates(state.targetCoordinates.latitude + 0.001,
-                state.targetCoordinates.longitude);
 
-        GeoCoordinatesUpdate coordinatesUpdate = new GeoCoordinatesUpdate(targetCoordinates);
-        //MapMeasure mapMeasure = new MapMeasure(MapMeasure.Kind.ZOOM_LEVEL, CAMERA_ZOOM_LEVEL_SEQUENCE.get(cameraZoomStepIndex));
-        MapMeasure mapMeasure = new MapMeasure(MapMeasure.Kind.ZOOM_LEVEL, 10);
-
-        double bowFactor = 1;
-        MapCameraAnimation animation = MapCameraAnimationFactory.flyTo(
-                coordinatesUpdate,
-                mapMeasure,
-                bowFactor,
-                CAMERA_ZOOM_ANIMATION_DURATION
-        );
-        camera.startAnimation(animation);
-
-        camera.startAnimation(animation, new AnimationListener() {
-            @Override
-            public void onAnimationStateChanged(@NonNull AnimationState animationState) {
-                if (!cameraZoomSequenceActive) {
-                    return;
-                }
-
-                if (animationState == AnimationState.COMPLETED) {
-                    scheduleNextZoomStep();
-                } else if (animationState == AnimationState.CANCELLED) {
-                    stopCameraZoomSequence();
-                }
-            }
-        });
-
+        double targetZoomLevel = CAMERA_ZOOM_LEVEL_SEQUENCE.get(cameraZoomStepIndex);
+        camera.zoomTo(targetZoomLevel);
+        scheduleNextZoomStep();
     }
 
     private void scheduleNextZoomStep() {
@@ -688,6 +657,7 @@ public class MainActivity extends AppCompatActivity {
         visualNavigator.setCustomLocationIndicator(customLocationIndicator);
         switchToNavigationLocationIndicator();
 
+        visualNavigator.setCameraBehavior(new DynamicCameraBehavior());
         // Set a route to follow. This leaves tracking mode.
         visualNavigator.setRoute(route);
 
