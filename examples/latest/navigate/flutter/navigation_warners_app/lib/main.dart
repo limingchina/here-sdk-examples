@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,8 @@ import 'package:flutter/material.dart';
 import 'package:here_sdk/core.dart' as HERE;
 import 'package:here_sdk/core.engine.dart';
 import 'package:here_sdk/core.errors.dart';
+import 'package:here_sdk/gestures.dart';
 import 'package:here_sdk/mapview.dart';
-import 'package:here_sdk/navigation.dart' as HERE;
-import 'package:here_sdk/routing.dart' as HERE;
 import 'package:navigation_warners_app/NavigationWarnersExample.dart';
 
 void main() async {
@@ -60,15 +59,24 @@ class _MyAppState extends State<MyApp> {
   HereMapController? _hereMapController;
   late final AppLifecycleListener _appLifecycleListener;
 
-  HERE.RoutingEngine? _routingEngine;
-  HERE.VisualNavigator? _visualNavigator;
-  HERE.LocationSimulator? _locationSimulator;
   NavigationWarnersExample? navigationWarnersExample;
+  bool _isGuidanceRunning = false;
+  static const String _startGuidanceButtonLabel = 'Start Guidance';
+  static const String _stopGuidanceButtonLabel = 'Stop Guidance';
+
+  // Default coordinated in Berlin, which can be change by long-tapping the map
+  HERE.GeoCoordinates _startGeoCoordinates = HERE.GeoCoordinates(52.520798, 13.409408);
+  HERE.GeoCoordinates _destinationGeoCoordinates  = HERE.GeoCoordinates(52.530905, 13.385007);
+  MapMarker? _startMapMarker;
+  MapMarker? _destinationMapMarker;
+  bool _setLongPressDestination = false;
 
   Future<bool> _handleBackPress() async {
     // Handle the back press.
-    _visualNavigator?.stopRendering();
-    _locationSimulator?.stop();
+    navigationWarnersExample?.stopGuidance();
+    setState(() {
+      _isGuidanceRunning = false;
+    });
 
     // Return true to allow the back press.
     return true;
@@ -80,9 +88,42 @@ class _MyAppState extends State<MyApp> {
       onWillPop: _handleBackPress,
       child: Scaffold(
         appBar: AppBar(title: Text('Navigation Warners Example')),
-        body: Stack(children: [HereMap(onMapCreated: _onMapCreated)]),
+        body: Stack(
+          children: [
+            HereMap(onMapCreated: _onMapCreated),
+            Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [button(_isGuidanceRunning ? _stopGuidanceButtonLabel : _startGuidanceButtonLabel, _startNavigationClicked)],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  void _startNavigationClicked() {
+    final example = navigationWarnersExample;
+    if (example == null) {
+      return;
+    }
+
+    if (example.isGuidanceRunning()) {
+      example.stopGuidance();
+      example.animateToRoutePreview(_startGeoCoordinates, _destinationGeoCoordinates);
+      setState(() {
+        _isGuidanceRunning = false;
+      });
+      return;
+    } else {
+      example.startGuidance(_startGeoCoordinates, _destinationGeoCoordinates);
+      setState(() {
+        _isGuidanceRunning = true;
+      });
+    }
   }
 
   void _onMapCreated(HereMapController hereMapController) {
@@ -97,75 +138,40 @@ class _MyAppState extends State<MyApp> {
       MapMeasure mapMeasureZoom = MapMeasure(MapMeasureKind.distanceInMeters, distanceToEarthInMeters);
       _hereMapController!.camera.lookAtPointWithMeasure(HERE.GeoCoordinates(52.520798, 13.409408), mapMeasureZoom);
 
-      _startGuidanceExample();
+      _showDialog("Navigation Warners", "This app routes to the HERE office in Berlin and logs various TBT events.");
+      _showDialog("Note", "Do a long press to change start and destination coordinates. " +
+          "Map icons are pickable.");
+
+      _startMapMarker = _addMapMarker(_startGeoCoordinates, 'assets/poi_start.png');
+      _destinationMapMarker = _addMapMarker(_destinationGeoCoordinates, 'assets/poi_destination.png');
+      navigationWarnersExample = NavigationWarnersExample(_hereMapController!);
+
+      _setLongPressGestureHandler();
     });
   }
 
-  _startGuidanceExample() {
-    _showDialog("Navigation Warners", "This app routes to the HERE office in Berlin and logs various TBT events.");
+  void _setLongPressGestureHandler() {
+    _hereMapController?.gestures.longPressListener = LongPressListener((gestureState, touchPoint) {
+      HERE.GeoCoordinates? geoCoordinates = _hereMapController?.viewToGeoCoordinates(touchPoint);
+      if (geoCoordinates == null) {
+        // If the MapView render surface is not attached, it will return null.
+        return;
+      }
 
-    // We start by calculating a car route.
-    _calculateRoute();
-  }
+      if (gestureState == GestureState.begin) {
+        // Set new route start or destination geographic coordinates based on long press location.
+        if (_setLongPressDestination) {
+          _destinationGeoCoordinates = geoCoordinates;
+          _destinationMapMarker?.coordinates = geoCoordinates;
+        } else {
+          _startGeoCoordinates = geoCoordinates;
+          _startMapMarker?.coordinates = geoCoordinates;
+        }
 
-  _calculateRoute() {
-    try {
-      _routingEngine = HERE.RoutingEngine();
-    } on InstantiationException {
-      throw Exception('Initialization of RoutingEngine failed.');
-    }
-
-    HERE.Waypoint startWaypoint = HERE.Waypoint(HERE.GeoCoordinates(52.520798, 13.409408));
-    HERE.Waypoint destinationWaypoint = HERE.Waypoint(HERE.GeoCoordinates(52.530905, 13.385007));
-
-    _routingEngine!.calculateCarRoute([startWaypoint, destinationWaypoint], HERE.CarOptions(), (
-      HERE.RoutingError? routingError,
-      List<HERE.Route>? routeList,
-    ) async {
-      if (routingError == null) {
-        // When error is null, it is guaranteed that the routeList is not empty.
-        HERE.Route _calculatedRoute = routeList!.first;
-        _startGuidance(_calculatedRoute);
-      } else {
-        final error = routingError.toString();
-        print('Error while calculating a route: $error');
+        // Toggle the marker that should be updated on next long press.
+        _setLongPressDestination = !_setLongPressDestination;
       }
     });
-  }
-
-  _startGuidance(HERE.Route route) {
-    try {
-      // Without a route set, this starts tracking mode.
-      _visualNavigator = HERE.VisualNavigator();
-    } on InstantiationException {
-      throw Exception("Initialization of VisualNavigator failed.");
-    }
-
-    // The example shows how to set-up several listeners that provide useful information during TBT.
-    navigationWarnersExample = NavigationWarnersExample(_visualNavigator!);
-    navigationWarnersExample?.setupListeners();
-
-    // This enables a navigation view including a rendered navigation arrow.
-    _visualNavigator!.startRendering(_hereMapController!);
-
-    // Set a route to follow. This leaves tracking mode.
-    _visualNavigator!.route = route;
-
-    // VisualNavigator acts as LocationListener to receive location updates directly from a location provider.
-    // Any progress along the route is a result of getting a new location fed into the VisualNavigator.
-    _setupLocationSource(_visualNavigator!, route);
-  }
-
-  _setupLocationSource(HERE.LocationListener locationListener, HERE.Route route) {
-    try {
-      // Provides fake GPS signals based on the route geometry.
-      _locationSimulator = HERE.LocationSimulator.withRoute(route, HERE.LocationSimulatorOptions());
-    } on InstantiationException {
-      throw Exception("Initialization of LocationSimulator failed.");
-    }
-
-    _locationSimulator!.listener = locationListener;
-    _locationSimulator!.start();
   }
 
   @override
@@ -184,6 +190,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void dispose() {
+    navigationWarnersExample?.stopGuidance();
     _disposeHERESDK();
     super.dispose();
   }
@@ -193,6 +200,26 @@ class _MyAppState extends State<MyApp> {
     await SDKNativeEngine.sharedInstance?.dispose();
     HERE.SdkContext.release();
     _appLifecycleListener.dispose();
+  }
+
+  MapMarker _addMapMarker(HERE.GeoCoordinates geoCoordinates, String assetPath) {
+    final mapImage = MapImage.withFilePathAndWidthAndHeight(assetPath, 100, 100);
+    final anchor2D = HERE.Anchor2D.withHorizontalAndVertical(0.5, 1.0);
+    final mapMarker = MapMarker.withAnchor(geoCoordinates, mapImage, anchor2D);
+    _hereMapController?.mapScene.addMapMarker(mapMarker);
+    return mapMarker;
+  }
+
+  // A helper method to add a button on top of the HERE map.
+  Align button(String buttonLabel, Function callbackFunction) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(foregroundColor: Colors.white, backgroundColor: Colors.lightBlueAccent),
+        onPressed: () => callbackFunction(),
+        child: Text(buttonLabel, style: const TextStyle(fontSize: 15)),
+      ),
+    );
   }
 
   // A helper method to show a dialog.

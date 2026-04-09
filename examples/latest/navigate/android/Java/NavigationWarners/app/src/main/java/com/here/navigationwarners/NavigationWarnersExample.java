@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,22 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.here.sdk.animation.Easing;
+import com.here.sdk.animation.EasingFunction;
 import com.here.sdk.core.GeoCoordinates;
+import com.here.sdk.core.GeoOrientationUpdate;
+import com.here.sdk.core.GeoPolyline;
+import com.here.sdk.core.GeoPolylineDirection;
+import com.here.sdk.core.Point2D;
+import com.here.sdk.core.Rectangle2D;
+import com.here.sdk.core.Size2D;
+import com.here.sdk.core.errors.InstantiationErrorException;
+import com.here.sdk.mapview.MapCameraAnimation;
+import com.here.sdk.mapview.MapCameraAnimationFactory;
+import com.here.sdk.mapview.MapCameraUpdate;
+import com.here.sdk.mapview.MapCameraUpdateFactory;
+import com.here.sdk.mapview.MapMeasure;
+import com.here.sdk.mapview.MapView;
 import com.here.sdk.navigation.AspectRatio;
 import com.here.sdk.navigation.BorderCrossingWarning;
 import com.here.sdk.navigation.BorderCrossingWarningListener;
@@ -48,9 +63,10 @@ import com.here.sdk.navigation.LaneDirection;
 import com.here.sdk.navigation.LaneMarkings;
 import com.here.sdk.navigation.LaneRecommendationState;
 import com.here.sdk.navigation.LaneType;
+import com.here.sdk.navigation.LocationSimulator;
+import com.here.sdk.navigation.LocationSimulatorOptions;
 import com.here.sdk.navigation.LowSpeedZoneWarning;
 import com.here.sdk.navigation.LowSpeedZoneWarningListener;
-import com.here.sdk.navigation.ManeuverNotificationOptions;
 import com.here.sdk.navigation.ManeuverProgress;
 import com.here.sdk.navigation.ManeuverViewLaneAssistance;
 import com.here.sdk.navigation.ManeuverViewLaneAssistanceListener;
@@ -99,32 +115,101 @@ import com.here.sdk.navigation.VisualNavigator;
 import com.here.sdk.navigation.WarningNotificationDistances;
 import com.here.sdk.navigation.WarningType;
 import com.here.sdk.navigation.WeightRestrictionType;
+import com.here.sdk.routing.RoutingOptions;
 import com.here.sdk.routing.Maneuver;
-import com.here.sdk.routing.ManeuverAction;
 import com.here.sdk.routing.PaymentMethod;
 import com.here.sdk.routing.RoadTexts;
 import com.here.sdk.routing.Route;
-import com.here.sdk.routing.Section;
-import com.here.sdk.routing.Span;
-import com.here.sdk.routing.StreetAttributes;
+import com.here.sdk.routing.RoutingEngine;
+import com.here.sdk.routing.Waypoint;
 import com.here.sdk.transport.GeneralVehicleSpeedLimits;
+import com.here.time.Duration;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 // This class shows the various events that can be emitted during turn-by-turn navigation.
 // Note that this class does not show an exhaustive list of all possible events.
 // More events are shown in the "Navigation" example app.
 public class NavigationWarnersExample {
-    public enum RoadType {HIGHWAY, RURAL, URBAN}
-
     private static final String TAG = NavigationWarnersExample.class.getName();
-
     private final Context context;
+    private final MapView mapView;
+    private final RoutingEngine routingEngine;
+    private final VisualNavigator visualNavigator;
+    private LocationSimulator locationSimulator;
+    private boolean isGuidanceRunning = false;
+    private RouteProgress currentRouteProgress;
 
-    public NavigationWarnersExample(Context context) {
+    public NavigationWarnersExample(Context context, MapView mapView) {
         this.context = context;
+        this.mapView = mapView;
+
+        try {
+            this.visualNavigator = new VisualNavigator();
+        } catch (InstantiationErrorException e) {
+            throw new RuntimeException("Initialization of VisualNavigator failed: " + e.error.name());
+        }
+
+        try {
+            this.routingEngine = new RoutingEngine();
+        } catch (InstantiationErrorException e) {
+            throw new RuntimeException("Initialization of RoutingEngine failed: " + e.error.name());
+        }
+    }
+
+    public boolean isGuidanceRunning() {
+        return isGuidanceRunning;
+    }
+
+    public void startGuidance(GeoCoordinates startGeoCoordinates,
+                              GeoCoordinates destinationGeoCoordinates) {
+        routingEngine.calculateRoute(
+                new ArrayList<>(Arrays.asList(new Waypoint(startGeoCoordinates), new Waypoint(destinationGeoCoordinates))),
+                new RoutingOptions(),
+                (routingError, routes) -> {
+                    if (routingError == null) {
+                        // When routingError is null, routes is guaranteed to contain at least one route.
+                        Route route = routes.get(0);
+                        startGuidanceWithRoute(route);
+                    } else {
+                        Log.e(TAG, "Route calculation error: " + routingError);
+                    }
+                }
+        );
+    }
+
+    public void stopGuidance() {
+        if (locationSimulator != null) {
+            locationSimulator.stop();
+            locationSimulator = null;
+        }
+
+        visualNavigator.setRoute(null);
+        visualNavigator.stopRendering();
+        isGuidanceRunning = false;
+    }
+
+    private void startGuidanceWithRoute(Route route) {
+        setupListeners(visualNavigator);
+        visualNavigator.startRendering(mapView);
+        visualNavigator.setRoute(route);
+        setupLocationSource(route);
+        isGuidanceRunning = true;
+    }
+
+    private void setupLocationSource(Route route) {
+        try {
+            locationSimulator = new LocationSimulator(route, new LocationSimulatorOptions());
+        } catch (InstantiationErrorException e) {
+            throw new RuntimeException("Initialization of LocationSimulator failed: " + e.error.name());
+        }
+
+        locationSimulator.setListener(visualNavigator);
+        locationSimulator.start();
     }
 
     // More event handling can be seen in the "Navigation" app.
@@ -137,6 +222,7 @@ public class NavigationWarnersExample {
         visualNavigator.setRouteProgressListener(new RouteProgressListener() {
             @Override
             public void onRouteProgressUpdated(@NonNull RouteProgress routeProgress) {
+                currentRouteProgress = routeProgress;
 
                 // Contains the progress for the next maneuver ahead and the next-next maneuvers, if any.
                 List<ManeuverProgress> nextManeuverList = routeProgress.maneuverProgress;
@@ -154,32 +240,9 @@ public class NavigationWarnersExample {
                     return;
                 }
 
-                String roadName = getRoadName(nextManeuver, visualNavigator.getRoute());
-
                 // An example on how to retrieve the road name can be seen in the "Navigation" example app.
-                String nextManeuverAction = nextManeuver.getAction().name() + " on " + roadName
-                        + " in " + nextManeuverProgress.remainingDistanceInMeters + " meters.";
+                String nextManeuverAction = "Next maneuver action: " + nextManeuver.getAction().name() + " in " + nextManeuverProgress.remainingDistanceInMeters + " meters.";
                 Log.d(TAG, nextManeuverAction);
-
-                // Angle is null for some maneuvers like Depart, Arrive and Roundabout.
-                Double turnAngle = nextManeuver.getTurnAngleInDegrees();
-                if (turnAngle != null) {
-                    if (turnAngle > 10) {
-                        Log.d(TAG, "At the next maneuver: Make a right turn of " + turnAngle + " degrees.");
-                    } else if (turnAngle < -10) {
-                        Log.d(TAG, "At the next maneuver: Make a left turn of " + turnAngle + " degrees.");
-                    } else {
-                        Log.d(TAG, "At the next maneuver: Go straight.");
-                    }
-                }
-
-                // Angle is null when the roundabout maneuver is not an enter, exit or keep maneuver.
-                Double roundaboutAngle = nextManeuver.getRoundaboutAngleInDegrees();
-                if (roundaboutAngle != null) {
-                    // Note that the value is negative only for left-driving countries such as UK.
-                    Log.d(TAG, "At the next maneuver: Follow the roundabout for " +
-                            roundaboutAngle + " degrees to reach the exit.");
-                }
             }
         });
 
@@ -245,10 +308,19 @@ public class NavigationWarnersExample {
         visualNavigator.setSafetyCameraWarningListener(new SafetyCameraWarningListener() {
             @Override
             public void onSafetyCameraWarningUpdated(@NonNull SafetyCameraWarning safetyCameraWarning) {
+                // Safety camera warning geocoordinates can only be fetched in non-tracking mode.
+                Route currentRoute = Objects.requireNonNull(visualNavigator.getRoute());
+                GeoCoordinates safetyCameraGeoCoordinates  = getGeocordinatesForRemainingDistance(currentRouteProgress,
+                        safetyCameraWarning.distanceToCameraInMeters,
+                        currentRoute
+                );
+
+                Log.d(TAG, "Received safety camera warning update at "+ NavigationWarnersExample.toString(safetyCameraGeoCoordinates));
                 if (safetyCameraWarning.distanceType == DistanceType.AHEAD) {
                     Log.d(TAG, "Safety camera warning " + safetyCameraWarning.type.name() + " ahead in: "
                             + safetyCameraWarning.distanceToCameraInMeters + "with speed limit ="
-                            + safetyCameraWarning.speedLimitInMetersPerSecond + "m/s");
+                            + safetyCameraWarning.speedLimitInMetersPerSecond + "m/s"
+                            + " at geo-coordinates: " + NavigationWarnersExample.toString(safetyCameraGeoCoordinates));
                 } else if (safetyCameraWarning.distanceType == DistanceType.PASSED) {
                     Log.d(TAG, "Safety camera warning " + safetyCameraWarning.type.name() + " passed: "
                             + safetyCameraWarning.distanceToCameraInMeters + "with speed limit ="
@@ -652,7 +724,7 @@ public class NavigationWarnersExample {
         visualNavigator.setRoadTextsListener(new RoadTextsListener() {
             @Override
             public void onRoadTextsUpdated(@NonNull RoadTexts roadTexts) {
-                // See getRoadName() how to get the current road name from the provided RoadTexts.
+                // See getRoadName() in the "Rerouting" example app to learn how to get the current road name from the provided RoadTexts.
             }
         });
 
@@ -753,75 +825,6 @@ public class NavigationWarnersExample {
         speedLimitOffset.highSpeedBoundaryInMetersPerSecond = 25;
 
         visualNavigator.setSpeedWarningOptions(new SpeedWarningOptions(speedLimitOffset));
-    }
-
-    private String getRoadName(Maneuver maneuver, Route route) {
-        RoadTexts currentRoadTexts = maneuver.getRoadTexts();
-        RoadTexts nextRoadTexts = maneuver.getNextRoadTexts();
-
-        String currentRoadName = currentRoadTexts.names.getDefaultValue();
-        String currentRoadNumber = currentRoadTexts.numbersWithDirection.getDefaultValue();
-        String nextRoadName = nextRoadTexts.names.getDefaultValue();
-        String nextRoadNumber = nextRoadTexts.numbersWithDirection.getDefaultValue();
-
-        String roadName = nextRoadName == null ? nextRoadNumber : nextRoadName;
-
-        // On highways, we want to show the highway number instead of a possible road name,
-        // while for inner city and urban areas road names are preferred over road numbers.
-        if (getRoadType(maneuver, route) == RoadType.HIGHWAY) {
-            roadName = nextRoadNumber == null ? nextRoadName : nextRoadNumber;
-        }
-
-        if (maneuver.getAction() == ManeuverAction.ARRIVE) {
-            // We are approaching the destination, so there's no next road.
-            roadName = currentRoadName == null ? currentRoadNumber : currentRoadName;
-        }
-
-        if (roadName == null) {
-            // Happens only in rare cases, when also the fallback is null.
-            roadName = "unnamed road";
-        }
-        return roadName;
-    }
-
-    // Determines the road type for a given maneuver based on street attributes.
-    // Return The road type classification (HIGHWAY, URBAN, RURAL, or UNDEFINED).
-    private RoadType getRoadType(Maneuver maneuver, Route route) {
-        Section sectionOfManeuver = route.getSections().get(maneuver.getSectionIndex());
-        List<Span> spansInSection = sectionOfManeuver.getSpans();
-
-        // If attributes list is empty then the road type is rural.
-        if(spansInSection.isEmpty()) {
-            return RoadType.RURAL;
-        }
-
-        Span currentSpan = spansInSection.get(maneuver.getSpanIndex());
-        List<StreetAttributes> streetAttributes = currentSpan.getStreetAttributes();
-
-        // If attributes list contains either CONTROLLED_ACCESS_HIGHWAY, or MOTORWAY or RAMP then the road type is highway.
-        // Check for highway attributes (highest priority)
-        if (streetAttributes.contains(StreetAttributes.CONTROLLED_ACCESS_HIGHWAY)
-                || streetAttributes.contains(StreetAttributes.MOTORWAY)
-                || streetAttributes.contains(StreetAttributes.RAMP)) {
-            return RoadType.HIGHWAY;
-        }
-
-        // If attributes list contains BUILT_UP_AREA then the road type is urban.
-        // Check for urban attributes (second priority)
-        if (streetAttributes.contains(StreetAttributes.BUILT_UP_AREA)) {
-            return RoadType.URBAN;
-        }
-
-        // If the road type is neither urban nor highway, default to rural for all other cases.
-        return RoadType.RURAL;
-    }
-
-    private void setupManeuverNotificationOptions(VisualNavigator visualNavigator) {
-        ManeuverNotificationOptions maneuverNotificationOptions = new ManeuverNotificationOptions();
-
-        // Indicates whether lane recommendation should be used when generating notifications.
-        maneuverNotificationOptions.enableLaneRecommendation = true;
-        visualNavigator.setManeuverNotificationOptions(maneuverNotificationOptions);
     }
 
     private Double getCurrentSpeedLimit(SpeedLimit speedLimit) {
@@ -946,6 +949,30 @@ public class NavigationWarnersExample {
         }
     }
 
+    // Animates the camera to fit the given route.
+    public void animateToRoutePreview(GeoCoordinates startGeoCoordinates, GeoCoordinates destinationGeoCoordinates) {
+        double bearing = 0;
+        double tilt = 0;
+        double distanceInMeters = 1000 * 10;
+        // We want to show the route fitting in the map view with an additional padding of 300 pixels
+        Point2D origin = new Point2D(300, 300);
+        Size2D sizeInPixels = new Size2D(mapView.getWidth() - 600, mapView.getHeight() - 600);
+        Rectangle2D mapViewport = new Rectangle2D(origin, sizeInPixels);
+
+        List<GeoCoordinates> coordinatesList = Arrays.asList(startGeoCoordinates, destinationGeoCoordinates);
+
+        // Animate to the route overview.
+        MapCameraUpdate update = MapCameraUpdateFactory.lookAt(
+                coordinatesList,
+                mapViewport,
+                new GeoOrientationUpdate(bearing, tilt),
+                new MapMeasure(MapMeasure.Kind.DISTANCE_IN_METERS, distanceInMeters)
+        );
+        MapCameraAnimation animation =
+                MapCameraAnimationFactory.createAnimation(update, Duration.ofMillis(500), new Easing(EasingFunction.IN_CUBIC));
+        mapView.getCamera().startAnimation(animation);
+    }
+
     // A method to check if a given LaneDirection is on route or not.
     // lane.directionsOnRoute gives only those LaneDirection that are on the route.
     // When the driver is in tracking mode without following a route, this always returns false.
@@ -953,8 +980,35 @@ public class NavigationWarnersExample {
         return lane.directionsOnRoute.contains(laneDirection);
     }
 
+    // Returns the GeoCoordinates for an object that is located at the end of the remaining distance.
+    private GeoCoordinates getGeocordinatesForRemainingDistance(RouteProgress routeProgress,
+                                                                double remainingObjectDistnaceInMetres,
+                                                                Route currentRoute) {
+        double currentCCPOffsetInMetrs = getOffsetOfCCPOnRouteInMeters(routeProgress, currentRoute);
+
+        // Calculate the offset along the route for the given object.
+        double remainingDistanceOffsetInMetres = currentCCPOffsetInMetrs + remainingObjectDistnaceInMetres;
+        return getGeoCoordinatesFromOffsetInMeters(currentRoute.getGeometry(), remainingDistanceOffsetInMetres);
+    }
+
+    private Double getOffsetOfCCPOnRouteInMeters(RouteProgress routeProgress, Route currentRoute) {
+        double totalLength = currentRoute.getLengthInMeters();
+        // [SectionProgress] is guaranteed to be non-empty.
+        double remainingDistance = routeProgress.sectionProgress.get(routeProgress.sectionProgress.size() - 1).remainingDistanceInMeters;
+        return totalLength - remainingDistance;
+    }
+
+    // Convert an offset in meters along a GeoPolyline to GeoCoordinates using the HERE SDK's coordinatesAtOffsetInMeters.
+    public GeoCoordinates getGeoCoordinatesFromOffsetInMeters(GeoPolyline geoPolyline, double offsetInMeters) {
+        return geoPolyline.coordinatesAtOffsetInMeters(offsetInMeters, GeoPolylineDirection.FROM_BEGINNING);
+    }
+
     private boolean isCurrentLaneViewDirectionOnRoute(CurrentSituationLaneView currentSituationLaneView, LaneDirection laneDirection) {
         return currentSituationLaneView.directionsOnRoute.contains(laneDirection);
+    }
+
+    public static String toString(GeoCoordinates geoCoordinates) {
+        return geoCoordinates.latitude + ", " + geoCoordinates.longitude;
     }
 
     private void logLaneAccess(String TAG, int laneNumber, LaneAccess laneAccess) {

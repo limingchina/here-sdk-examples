@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2025 HERE Europe B.V.
+ * Copyright (C) 2022-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ struct ContentView: View {
     
     @State private var mapView = MapView()
     @State private var navigationWarnersExample: NavigationWarnersExample?
+    @State private var isGuidanceRunning = false
     
     var body: some View {
          // Show the views on top of each other.
@@ -31,11 +32,18 @@ struct ContentView: View {
              // The map view should fill the entire screen.
              WrappedMapView(mapView: $mapView)
                  .edgesIgnoringSafeArea(.all)
+             
+             VStack {
+                 CustomButton(title: isGuidanceRunning ? "Stop Guidance" : "Start Guidance") {
+                     if let navigationWarnersExample = navigationWarnersExample {
+                         isGuidanceRunning = navigationWarnersExample.onGuidanceButtonClicked()
+                     }
+                 }
+             }
          }
          .onAppear {
              // ContentView appeared, now we init the example.
              navigationWarnersExample = NavigationWarnersExample(mapView)
-             navigationWarnersExample?.startGuidanceExample()
          }
      }
 }
@@ -46,6 +54,22 @@ private struct WrappedMapView: UIViewRepresentable {
     @Binding var mapView: MapView
     func makeUIView(context: Context) -> MapView { return mapView }
     func updateUIView(_ mapView: MapView, context: Context) { }
+}
+
+// A reusable button to keep the layout clean.
+struct CustomButton: View {
+    let title: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .padding()
+                .background(Color(red: 0, green: 182/255, blue: 178/255))
+                .foregroundColor(.white)
+                .cornerRadius(5)
+        }
+    }
 }
 
 struct ContentView_Previews: PreviewProvider {

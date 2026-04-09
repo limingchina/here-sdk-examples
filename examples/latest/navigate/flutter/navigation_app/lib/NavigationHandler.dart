@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License")
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import 'package:here_sdk/trafficawarenavigation.dart';
 import 'package:navigation_app/RouteCalculator.dart';
 import 'package:navigation_app/time_utils.dart';
 
+import 'ElectronicHorizonHandler.dart';
 import 'LanguageCodeConverter.dart';
 
 // This class combines the various events that can be emitted during turn-by-turn navigation.
@@ -36,6 +37,7 @@ import 'LanguageCodeConverter.dart';
 class NavigationHandler {
   VisualNavigator _visualNavigator;
   DynamicRoutingEngine _dynamicRoutingEngine;
+  ElectronicHorizonHandler _electronicHorizonHandler;
   MapMatchedLocation? _lastMapMatchedLocation;
   int _previousManeuverIndex = -1;
   int lastTrafficUpdateInMilliseconds = 0;
@@ -46,13 +48,17 @@ class NavigationHandler {
   NavigationHandler(
     VisualNavigator visualNavigator,
     DynamicRoutingEngine dynamicRoutingEngine,
+    ElectronicHorizonHandler electronicHorizonHandler,
     ValueChanged<String> updateMessageState,
     RouteCalculator routeCalculator,
   ) : _visualNavigator = visualNavigator,
       _dynamicRoutingEngine = dynamicRoutingEngine,
+      _electronicHorizonHandler = electronicHorizonHandler,
       _updateMessageState = updateMessageState,
       _routeCalculator = routeCalculator {}
 
+  // Note that this class does not show all available listeners that can be used for turn-by-turn navigation.
+  // More listeners are shown in the "navigation_warners_app".
   void setupListeners() {
     _setupVoiceTextMessages();
 
@@ -83,11 +89,9 @@ class NavigationHandler {
       }
 
       ManeuverAction action = nextManeuver.action;
-      String roadName = _getRoadName(nextManeuver);
       String logMessage =
+          "Next maneuver action: " +
           action.name +
-          ' on ' +
-          roadName +
           ' in ' +
           nextManeuverProgress.remainingDistanceInMeters.toString() +
           ' meters.';
@@ -107,7 +111,29 @@ class NavigationHandler {
       if (_lastMapMatchedLocation != null) {
         // Update the route based on the current location of the driver.
         // We periodically want to search for better traffic-optimized routes.
-        _dynamicRoutingEngine.updateCurrentLocation(_lastMapMatchedLocation!, routeProgress.sectionIndex);
+        _dynamicRoutingEngine.updateCurrentLocation(_lastMapMatchedLocation!, routeProgress.routeMatchedLocation.sectionIndex);
+
+        // Update the ElectronicHorizon with the last map-matched location.
+        _electronicHorizonHandler.update(_lastMapMatchedLocation!);
+      }
+
+      // Angle is null for some maneuvers like Depart, Arrive and Roundabout.
+      double? turnAngle = nextManeuver.turnAngleInDegrees;
+      if (turnAngle != null) {
+        if (turnAngle > 10) {
+          print('At the next maneuver: Make a right turn of ${turnAngle} degrees.');
+        } else if (turnAngle < -10) {
+          print('At the next maneuver: Make a left turn of ${turnAngle} degrees.');
+        } else {
+          print('At the next maneuver: Go straight.');
+        }
+      }
+
+      // Angle is null when the roundabout maneuver is not an enter, exit or keep maneuver.
+      double? roundaboutAngle = nextManeuver.roundaboutAngleInDegrees;
+      if (roundaboutAngle != null) {
+        // Note that the value is negative only for left-driving countries such as UK.
+        print('At the next maneuver: Follow the roundabout for ${roundaboutAngle} degrees to reach the exit.');
       }
 
       updateTrafficOnRoute(routeProgress);
@@ -126,6 +152,10 @@ class NavigationHandler {
       }
 
       _lastMapMatchedLocation = mapMatchedLocation;
+
+      final latitude = mapMatchedLocation.coordinates.latitude;
+      final longitude = mapMatchedLocation.coordinates.longitude;
+      print("MapMatchedLocation - Lat: $latitude, Lon: $longitude");
 
       if (_lastMapMatchedLocation?.isDrivingInTheWrongWay == true) {
         // For two-way streets, this value is always false. This feature is supported in tracking mode and when deviating from a route.
@@ -180,7 +210,7 @@ class NavigationHandler {
     SectionProgress lastSectionProgress = sectionProgressList.last;
     int traveledDistanceOnLastSectionInMeters =
         currentRoute.lengthInMeters - lastSectionProgress.remainingDistanceInMeters;
-    int lastTraveledSectionIndex = routeProgress.sectionIndex;
+    int lastTraveledSectionIndex = routeProgress.routeMatchedLocation.sectionIndex;
 
     _routeCalculator.calculateTrafficOnRoute(
       currentRoute,
@@ -224,6 +254,9 @@ class NavigationHandler {
     maneuverNotificationOptions.language = ttsLanguageCode;
     // Set the measurement system used for distances.
     maneuverNotificationOptions.unitSystem = UnitSystem.metric;
+    // Toggle the lane recommendation in the maneuver notifications.
+    // The lane recommendation, if enabled, will be given only for the ManeuverNotificationType.distance notification type.
+    maneuverNotificationOptions.enableLaneRecommendation = true;
     _visualNavigator.maneuverNotificationOptions = maneuverNotificationOptions;
     print("LanguageCode for maneuver notifications: $ttsLanguageCode.");
   }
@@ -239,33 +272,5 @@ class NavigationHandler {
     }
 
     return languageCodeForCurrenDevice;
-  }
-
-  String _getRoadName(Maneuver maneuver) {
-    RoadTexts currentRoadTexts = maneuver.roadTexts;
-    RoadTexts nextRoadTexts = maneuver.nextRoadTexts;
-
-    String? currentRoadName = currentRoadTexts.names.getDefaultValue();
-    String? currentRoadNumber = currentRoadTexts.numbersWithDirection.getDefaultValue();
-    String? nextRoadName = nextRoadTexts.names.getDefaultValue();
-    String? nextRoadNumber = nextRoadTexts.numbersWithDirection.getDefaultValue();
-
-    String? roadName = nextRoadName == null ? nextRoadNumber : nextRoadName;
-
-    // On highways, we want to show the highway number instead of a possible road name,
-    // while for inner city and urban areas road names are preferred over road numbers.
-    if (maneuver.nextRoadType == RoadType.highway) {
-      roadName = nextRoadNumber == null ? nextRoadName : nextRoadNumber;
-    }
-
-    if (maneuver.action == ManeuverAction.arrive) {
-      // We are approaching the destination, so there's no next road.
-      roadName = currentRoadName == null ? currentRoadNumber : currentRoadName;
-    }
-
-    // Happens only in rare cases, when also the fallback above is null.
-    roadName ??= 'unnamed road';
-
-    return roadName;
   }
 }

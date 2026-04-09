@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,7 +86,8 @@ public class NavigationHandler {
     }
 
     // Note that this class does not show all available listeners that can be used for turn-by-turn navigation.
-    public void setupListeners(VisualNavigator visualNavigator, DynamicRoutingEngine dynamicRoutingEngine) {
+    // More listeners are shown in the "NavigationWarners" app.
+    public void setupListeners(VisualNavigator visualNavigator, DynamicRoutingEngine dynamicRoutingEngine, ElectronicHorizonHandler electronicHorizonHandler) {
 
         // A helper class for TTS.
         voiceAssistant = new VoiceAssistant(context, new VoiceAssistant.VoiceAssistantListener() {
@@ -118,9 +119,7 @@ public class NavigationHandler {
                 }
 
                 ManeuverAction action = nextManeuver.getAction();
-                String roadName = getRoadName(nextManeuver, visualNavigator.getRoute());
-                String logMessage = action.name() + " on " + roadName +
-                        " in " + nextManeuverProgress.remainingDistanceInMeters + " meters.";
+                String logMessage = "Next maneuver action: " + action.name() + " in " + nextManeuverProgress.remainingDistanceInMeters + " meters.";
 
                 String currentETAString = getETA(routeProgress);
 
@@ -137,7 +136,30 @@ public class NavigationHandler {
                 if (lastMapMatchedLocation != null) {
                     // Update the route based on the current location of the driver.
                     // We periodically want to search for better traffic-optimized routes.
-                    dynamicRoutingEngine.updateCurrentLocation(lastMapMatchedLocation, routeProgress.sectionIndex);
+                    dynamicRoutingEngine.updateCurrentLocation(lastMapMatchedLocation, routeProgress.routeMatchedLocation.sectionIndex);
+
+                    // Update the ElectronicHorizon with the last map-matched location.
+                    electronicHorizonHandler.update(lastMapMatchedLocation);
+                }
+
+                // Angle is null for some maneuvers like Depart, Arrive and Roundabout.
+                Double turnAngle = nextManeuver.getTurnAngleInDegrees();
+                if (turnAngle != null) {
+                    if (turnAngle > 10) {
+                        Log.d(TAG, "At the next maneuver: Make a right turn of " + turnAngle + " degrees.");
+                    } else if (turnAngle < -10) {
+                        Log.d(TAG, "At the next maneuver: Make a left turn of " + turnAngle + " degrees.");
+                    } else {
+                        Log.d(TAG, "At the next maneuver: Go straight.");
+                    }
+                }
+
+                // Angle is null when the roundabout maneuver is not an enter, exit or keep maneuver.
+                Double roundaboutAngle = nextManeuver.getRoundaboutAngleInDegrees();
+                if (roundaboutAngle != null) {
+                    // Note that the value is negative only for left-driving countries such as UK.
+                    Log.d(TAG, "At the next maneuver: Follow the roundabout for " +
+                            roundaboutAngle + " degrees to reach the exit.");
                 }
 
                 updateTrafficOnRoute(routeProgress, visualNavigator);
@@ -153,6 +175,8 @@ public class NavigationHandler {
                     Log.d(TAG, "The currentNavigableLocation could not be map-matched. Are you off-road?");
                     return;
                 }
+
+                Log.d(TAG, "MapMatchedLocation - Lat: " + lastMapMatchedLocation.coordinates.latitude + ", Lon: " + lastMapMatchedLocation.coordinates.longitude);
 
                 if (lastMapMatchedLocation.isDrivingInTheWrongWay) {
                     // For two-way streets, this value is always false. This feature is supported in tracking mode and when deviating from a route.
@@ -236,68 +260,6 @@ public class NavigationHandler {
         return languageCodeForCurrenDevice;
     }
 
-    private String getRoadName(Maneuver maneuver, Route route) {
-        RoadTexts currentRoadTexts = maneuver.getRoadTexts();
-        RoadTexts nextRoadTexts = maneuver.getNextRoadTexts();
-
-        String currentRoadName = currentRoadTexts.names.getDefaultValue();
-        String currentRoadNumber = currentRoadTexts.numbersWithDirection.getDefaultValue();
-        String nextRoadName = nextRoadTexts.names.getDefaultValue();
-        String nextRoadNumber = nextRoadTexts.numbersWithDirection.getDefaultValue();
-
-        String roadName = nextRoadName == null ? nextRoadNumber : nextRoadName;
-
-        // On highways, we want to show the highway number instead of a possible road name,
-        // while for inner city and urban areas road names are preferred over road numbers.
-        if (getRoadType(maneuver, route) == RoadType.HIGHWAY) {
-            roadName = nextRoadNumber == null ? nextRoadName : nextRoadNumber;
-        }
-
-        if (maneuver.getAction() == ManeuverAction.ARRIVE) {
-            // We are approaching the destination, so there's no next road.
-            roadName = currentRoadName == null ? currentRoadNumber : currentRoadName;
-        }
-
-        if (roadName == null) {
-            // Happens only in rare cases, when also the fallback is null.
-            roadName = "unnamed road";
-        }
-
-        return roadName;
-    }
-
-    // Determines the road type for a given maneuver based on street attributes.
-    // Return The road type classification (HIGHWAY, URBAN, RURAL, or UNDEFINED).
-    private RoadType getRoadType(Maneuver maneuver, Route route) {
-        Section sectionOfManeuver = route.getSections().get(maneuver.getSectionIndex());
-        List<Span> spansInSection = sectionOfManeuver.getSpans();
-
-        // If attributes list is empty then the road type is rural.
-        if(spansInSection.isEmpty()) {
-            return RoadType.RURAL;
-        }
-
-        Span currentSpan = spansInSection.get(maneuver.getSpanIndex());
-        List<StreetAttributes> streetAttributes = currentSpan.getStreetAttributes();
-
-        // If attributes list contains either CONTROLLED_ACCESS_HIGHWAY, or MOTORWAY or RAMP then the road type is highway.
-        // Check for highway attributes.
-        if (streetAttributes.contains(StreetAttributes.CONTROLLED_ACCESS_HIGHWAY)
-                || streetAttributes.contains(StreetAttributes.MOTORWAY)
-                || streetAttributes.contains(StreetAttributes.RAMP)) {
-            return RoadType.HIGHWAY;
-        }
-
-        // If attributes list contains BUILT_UP_AREA then the road type is urban.
-        // Check for urban attributes.
-        if (streetAttributes.contains(StreetAttributes.BUILT_UP_AREA)) {
-            return RoadType.URBAN;
-        }
-
-        // If the road type is neither urban nor highway, default to rural for all other cases.
-        return RoadType.RURAL;
-    }
-
     // Periodically updates the traffic information for the current route.
     // This method checks whether the last traffic update occurred within the specified interval and skips the update if not.
     // Then it calculates the current traffic conditions along the route using the `RoutingEngine`.
@@ -326,7 +288,7 @@ public class NavigationHandler {
         List<SectionProgress> sectionProgressList = routeProgress.sectionProgress;
         SectionProgress lastSectionProgress = sectionProgressList.get(sectionProgressList.size() - 1);
         int traveledDistanceOnLastSectionInMeters = currentRoute.getLengthInMeters() - lastSectionProgress.remainingDistanceInMeters;
-        int lastTraveledSectionIndex = routeProgress.sectionIndex;
+        int lastTraveledSectionIndex = routeProgress.routeMatchedLocation.sectionIndex;
 
         routingEngine.calculateTrafficOnRoute(currentRoute, lastTraveledSectionIndex, traveledDistanceOnLastSectionInMeters, new CalculateTrafficOnRouteCallback() {
             @Override

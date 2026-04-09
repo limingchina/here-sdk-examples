@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License")
  * you may not use this file except in compliance with the License.
@@ -45,9 +45,13 @@ class CameraExample: TapDelegate, MapCameraDelegate {
         // Same as the camera, which is also centered above the map view.
         // Later on, we will adjust the dot's location on screen programmatically when the camera's target changes.
         cameraTargetView = UIImageView(image: UIImage(named: "red_dot.png"))
-        cameraTargetView.center = CGPoint(x: mapView.frame.size.width  / 2,
-                                          y: mapView.frame.size.height / 2)
-        mapView.addSubview(cameraTargetView)
+
+        // Add the red dot to the map when, the mapView is ready.
+        DispatchQueue.main.async {
+            self.cameraTargetView.center = CGPoint(x: mapView.frame.size.width  / 2,
+                                                   y: mapView.frame.size.height / 2)
+            mapView.addSubview(self.cameraTargetView)
+        }
 
         // The POI MapCircle (green) indicates the next location to move to.
         updatePoiCircle(getRandomGeoCoordinates())

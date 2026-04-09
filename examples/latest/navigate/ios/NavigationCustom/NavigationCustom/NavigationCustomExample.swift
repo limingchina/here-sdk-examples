@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -414,18 +414,12 @@ class NavigationCustomExample: AnimationDelegate, LocationDelegate {
     func onLocationUpdated(_ location: Location) {
         // By default, accuracy is nil during simulation, but we want to customize the halo,
         // so we hijack the location object and add an accuracy value.
-        let location = addHorizontalAccuracy(location)
+        // Do not do this when using real GPS locations!
+        var updatedLocation = location
+        updatedLocation.horizontalAccuracyInMeters = defaultHaloAccurarcyInMeters
         // Feed location data into the VisualNavigator.
-        visualNavigator.onLocationUpdated(location)
-        lastKnownLocation = location
-    }
-    
-    private func addHorizontalAccuracy(_ simulatedLocation: Location) -> Location {
-        var location = Location(coordinates: simulatedLocation.coordinates)
-        location.time = simulatedLocation.time
-        location.bearingInDegrees = simulatedLocation.bearingInDegrees
-        location.horizontalAccuracyInMeters = defaultHaloAccurarcyInMeters
-        return location
+        visualNavigator.onLocationUpdated(updatedLocation)
+        lastKnownLocation = updatedLocation
     }
 
     private func showDialog(title: String, message: String) {

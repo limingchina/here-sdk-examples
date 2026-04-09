@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,15 +26,23 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 
+import com.here.sdk.animation.Easing;
+import com.here.sdk.animation.EasingFunction;
 import com.here.sdk.core.Color;
 import com.here.sdk.core.GeoCoordinates;
+import com.here.sdk.core.GeoOrientationUpdate;
 import com.here.sdk.core.GeoPolyline;
-import com.here.sdk.core.LocalizedText;
 import com.here.sdk.core.Point2D;
+import com.here.sdk.core.Rectangle2D;
+import com.here.sdk.core.Size2D;
 import com.here.sdk.core.errors.InstantiationErrorException;
 import com.here.sdk.core.threading.TaskHandle;
 import com.here.sdk.mapview.LineCap;
 import com.here.sdk.mapview.MapCamera;
+import com.here.sdk.mapview.MapCameraAnimation;
+import com.here.sdk.mapview.MapCameraAnimationFactory;
+import com.here.sdk.mapview.MapCameraUpdate;
+import com.here.sdk.mapview.MapCameraUpdateFactory;
 import com.here.sdk.mapview.MapImage;
 import com.here.sdk.mapview.MapImageFactory;
 import com.here.sdk.mapview.MapMarker;
@@ -45,18 +53,16 @@ import com.here.sdk.mapview.MapView;
 import com.here.sdk.mapview.RenderSize;
 import com.here.sdk.routing.CalculateRouteCallback;
 import com.here.sdk.routing.CalculateTrafficOnRouteCallback;
-import com.here.sdk.routing.CarOptions;
 import com.here.sdk.routing.DynamicSpeedInfo;
 import com.here.sdk.routing.Maneuver;
 import com.here.sdk.routing.ManeuverAction;
 import com.here.sdk.routing.PaymentMethod;
 import com.here.sdk.routing.Route;
-import com.here.sdk.routing.RouteLabel;
-import com.here.sdk.routing.RouteLabelType;
 import com.here.sdk.routing.RoutePlace;
 import com.here.sdk.routing.RouteRailwayCrossing;
 import com.here.sdk.routing.RoutingEngine;
 import com.here.sdk.routing.RoutingError;
+import com.here.sdk.routing.RoutingOptions;
 import com.here.sdk.routing.Section;
 import com.here.sdk.routing.SectionNotice;
 import com.here.sdk.routing.Span;
@@ -67,6 +73,8 @@ import com.here.sdk.routing.TrafficOnSection;
 import com.here.sdk.routing.TrafficOnSpan;
 import com.here.sdk.routing.TrafficOptimizationMode;
 import com.here.sdk.routing.Waypoint;
+import com.here.sdk.transport.VehicleSpecification;
+import com.here.time.Duration;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -137,7 +145,7 @@ public class RoutingExample {
     private void calculateRoute(List<Waypoint> waypoints) {
         currentRouteCalculationTask = routingEngine.calculateRoute(
                 waypoints,
-                getCarOptions(),
+                getRoutingOptions(),
                 new CalculateRouteCallback() {
                     @Override
                     public void onRouteCalculated(@Nullable RoutingError routingError, @Nullable List<Route> routes) {
@@ -149,7 +157,7 @@ public class RoutingExample {
                             logRouteSectionDetails(currentRoute);
                             logRouteViolations(currentRoute);
                             logTollDetails(currentRoute);
-                            logRouteLabels(currentRoute);
+                            animateToRoute(currentRoute);
                         } else {
                             showDialog("Error while calculating a route:", routingError.toString());
                         }
@@ -245,23 +253,6 @@ public class RoutingExample {
                     }
                 }
             }
-        }
-    }
-
-    private void logRouteLabels(Route route) {
-        // Get the list of the street names or route numbers through which the route is going to pass.
-        // Make sure to enable this feature via routeOptions.enableRouteLabels (see below).
-        List<RouteLabel> routeLabels = route.getRouteLabels();
-
-        if (routeLabels.isEmpty()) {
-            Log.d(TAG, "No route labels found for this route.");
-            return;
-        }
-
-        for (RouteLabel routeLabel : routeLabels) {
-            LocalizedText name = routeLabel.name;
-            RouteLabelType routeLabelType = routeLabel.type;
-            Log.d(TAG, "Route label: " + name.text + ", Type: " + routeLabelType.name());
         }
     }
 
@@ -405,16 +396,20 @@ public class RoutingExample {
         return distance > OFFROAD_DISTANCE_THRESHOLD_METERS;
     }
 
-    private CarOptions getCarOptions() {
-        CarOptions carOptions = new CarOptions();
-        carOptions.routeOptions.enableTolls = true;
+    private RoutingOptions getRoutingOptions() {
+        RoutingOptions routingOptions = new RoutingOptions();
+        routingOptions.routeOptions.enableTolls = true;
         // This is needed when e.g. requesting TrafficOnRoute data.
-        carOptions.routeOptions.enableRouteHandle = true;
+        routingOptions.routeOptions.enableRouteHandle = true;
 
         // Enable usage of HOV and HOT lanes.
         // Note: These lanes will only be used if they are available in the selected country.
-        carOptions.allowOptions.allowHov = true;
-        carOptions.allowOptions.allowHot = true;
+        routingOptions.allowOptions.allowHov = true;
+        routingOptions.allowOptions.allowHot = true;
+
+        // Set vehicle-specific options via VehicleSpecification.
+        // By default, the transport mode is already set to CAR.
+        VehicleSpecification vehicleSpecification = new VehicleSpecification();
 
         // In some cities (e.g., Bogotá, Mexico City, Jakarta), the last digit of the
         // license plate is used intentionally to control traffic in low-emission zones.
@@ -423,21 +418,20 @@ public class RoutingExample {
         // for example, on certain week days.
         // Make sure to update this value to the actual last character of your license
         // attached to your vehicle!
-        carOptions.lastCharacterOfLicensePlate = "7";
+        vehicleSpecification.lastCharacterOfLicensePlate = "7";
 
-        // When occupantsNumber is greater than 1, it enables the vehicle to use HOV/HOT lanes.
-        carOptions.occupantsNumber = 4;
+        // When occupancy is greater than 1, it enables the vehicle to use HOV/HOT lanes.
+        vehicleSpecification.occupancy = 4;
+
+        routingOptions.transportSpecification.vehicleSpecification = vehicleSpecification;
 
         // Disabled - Traffic optimization is completely disabled, including long-term road closures. It helps in producing stable routes.
         // Time dependent - Traffic optimization is enabled, the shape of the route will be adjusted according to the traffic situation which depends on departure time and arrival time.
-        carOptions.routeOptions.trafficOptimizationMode = trafficEnabled ?
+        routingOptions.routeOptions.trafficOptimizationMode = trafficEnabled ?
                 TrafficOptimizationMode.TIME_DEPENDENT :
                 TrafficOptimizationMode.DISABLED;
 
-        // Specifies whether route labels should be included in the route response.
-        carOptions.routeOptions.enableRouteLabels = true;
-
-        return carOptions;
+        return routingOptions;
     }
 
     public void clearMap() {
@@ -585,11 +579,46 @@ public class RoutingExample {
         mapMarkerList.add(mapMarker);
     }
 
+    private void animateToRoute(Route route) {
+
+        double bearing = 0;
+        double tilt = 0;
+        int padding = 50;
+        int width = mapView.getWidth();
+        int height = mapView.getHeight();
+
+        Point2D origin = new Point2D(padding, padding);
+        Size2D sizeInPixels = new Size2D(width - 2 * padding, height - 2 * padding);
+        Rectangle2D mapViewport = new Rectangle2D(origin, sizeInPixels);
+
+        GeoOrientationUpdate orientation = new GeoOrientationUpdate(bearing, tilt);
+
+        MapCameraUpdate update = MapCameraUpdateFactory.lookAt(
+                route.getBoundingBox(),
+                orientation,
+                mapViewport
+        );
+
+        MapCameraAnimation animation = MapCameraAnimationFactory.createAnimation(
+                update,
+                Duration.ofMillis(3000),
+                new Easing(EasingFunction.IN_CUBIC)
+        );
+
+        mapView.getCamera().startAnimation(animation);
+    }
+
     private void showDialog(String title, String message) {
         AlertDialog.Builder builder =
                 new AlertDialog.Builder(context);
         builder.setTitle(title);
         builder.setMessage(message);
         builder.show();
+    }
+
+    // Dispose the RoutingEngine instance to cancel any pending requests
+    // and shut it down for proper resource cleanup.
+    public void dispose() {
+        routingEngine.dispose();
     }
 }

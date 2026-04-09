@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,12 +37,20 @@ import com.here.sdk.mapview.MapMeasure;
 import com.here.sdk.mapview.MapScene;
 import com.here.sdk.mapview.MapScheme;
 import com.here.sdk.mapview.MapView;
+import com.here.sdk.units.compass.CompassUnit;
+import com.here.sdk.units.compass.CompassView;
 import com.here.sdk.units.core.utils.PermissionsRequestor;
 import com.here.sdk.units.core.utils.EnvironmentLogger;
+import com.here.sdk.units.core.views.UnitDialog;
+import com.here.sdk.units.mapruler.MapScaleView;
 import com.here.sdk.units.mapswitcher.MapSwitcherUnit;
 import com.here.sdk.units.mapswitcher.MapSwitcherView;
 import com.here.sdk.units.popupmenu.PopupMenuUnit;
 import com.here.sdk.units.popupmenu.PopupMenuView;
+import com.here.sdk.units.speedlimit.SpeedLimitUnit;
+import com.here.sdk.units.speedlimit.SpeedLimitView;
+import com.here.sdk.units.cityselector.CitySelectorView;
+import com.here.sdk.units.cityselector.CitySelectorUnit;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -77,7 +85,13 @@ public class MainActivity extends AppCompatActivity {
         // Set HERE SDK Units.
         setupPopupMenuUnit1();
         setupPopupMenuUnit2();
+        setupCitySelectorUnit();
         setupMapSwitcher();
+        setupMapScaleRuler();
+        setupCompass();
+        setupSpeedLimit();
+
+        showUnitDialog();
 
         // Note that for this app handling of permissions is optional as no sensitive permissions
         // are required.
@@ -110,6 +124,11 @@ public class MainActivity extends AppCompatActivity {
         popupMenuUnit.setMenuContent("Menu 1", menuItems);
     }
 
+    private void setupMapScaleRuler() {
+        MapScaleView mapScaleView = findViewById(R.id.map_ruler);
+        mapScaleView.setup(mapView);
+    }
+
     private void setupPopupMenuUnit2() {
         // Define menu items with the code that should be executed when clicking on the item.
         Map<String, Runnable> menuItems = new LinkedHashMap<>();
@@ -121,10 +140,45 @@ public class MainActivity extends AppCompatActivity {
         popupMenuUnit.setMenuContent("Menu 2", menuItems);
     }
 
+    private void setupCitySelectorUnit() {
+        CitySelectorView citySelectorView = findViewById(R.id.city_selector);
+        CitySelectorUnit citySelectorUnit = citySelectorView.citySelectorUnit;
+        citySelectorUnit.setOnCitySelectedListener(new CitySelectorUnit.OnCitySelectedListener() {
+            @Override
+            public void onCitySelected(double latitude, double longitude, String cityName) {
+                if (mapView != null) {
+                    double distanceInMeters = 10000;
+                    MapMeasure mapMeasureZoom = new MapMeasure(
+                            MapMeasure.Kind.DISTANCE_IN_METERS, distanceInMeters);
+                    mapView.getCamera().lookAt(new GeoCoordinates(latitude, longitude), mapMeasureZoom);
+                }
+            }
+        });
+    }
+
+    // Unit Dialog with title and description only.
+    private void showUnitDialog() {
+        UnitDialog unitDialog = new UnitDialog(MainActivity.this);
+        unitDialog.showDialog("Note: Title", "This is scrollable long description message.");
+    }
+
     private void setupMapSwitcher() {
         MapSwitcherView mapSwitcherView = findViewById(R.id.map_switcher);
         MapSwitcherUnit mapSwitcherUnit = mapSwitcherView.mapSwitcherUnit;
         mapSwitcherUnit.setup(mapView, getSupportFragmentManager());
+    }
+
+    private void setupSpeedLimit() {
+        SpeedLimitView speedLimitView = findViewById(R.id.speed_limit);
+        SpeedLimitUnit speedLimitUnit = speedLimitView.speedLimitUnit;
+        speedLimitUnit.setLabel("Label");
+        speedLimitUnit.setSpeedLimit("50");
+    }
+
+    private void setupCompass() {
+        CompassView compassView = findViewById(R.id.compass);
+        CompassUnit compassUnit = compassView.compassUnit;
+        compassUnit.setup(mapView, getSupportFragmentManager());
     }
 
     private void handleAndroidPermissions() {

@@ -10,7 +10,11 @@ Current sample units include:
 
 - **Core**: A basic component that is required by other units.
 - **MapSwitcher**: A component that switches between map schemes.
+- **MapRuler**: A component that displays the scale of the map.
 - **PopupMenu**: A menu component without HERE SDK dependencies.
+- **CitySelector**: A component that provides a dropdown menu for selecting predefined cities with their coordinates.
+- **Compass**: A component that displays the map’s orientation and allows users to reorient the map to north with a single tap.
+- **SpeedLimit**: A component that displays the current speed limit as an overlay on the map.
 
 See each module’s README for details.
 
@@ -63,7 +67,7 @@ If you use the Explore license instead of Navigate, remove or adapt any unit cod
 
 Use these conventions to keep modules consistent and discoverable.
 
-- **Module name**: Prefix with `heresdk-units-`, for example `heresdk-units-mapswitcher` (lowercase).
+- **Module name**: Prefix with `here-sdk-units-`, for example `here-sdk-units-mapswitcher` (lowercase).
 - **Package name**: Use `com.here.sdk.units.<yourunit>`.
 
 Create the module:
@@ -77,19 +81,22 @@ Create the module:
 5. Add your view or logic classes under
    `HERESDKUnits/<your-module>/src/main/java/com/here/sdk/units/<yourunit>/`.
 
-Configure the module:
+Configure the module via the module’s `build.gradle` file:
 
-- Add a compile-time reference to the HERE SDK AAR (units should not bundle the HERE SDK):
+- Add a compile-time reference to the HERE SDK AAR (units should not bundle the HERE SDK in their AAR) and depend on the core unit:
 
   ```gradle
   dependencies {
       // Pick the HERE SDK AAR matching the pattern found in HERESDKUnits/app/libs/.
       // Note: compileOnly ensures that the AAR is not exported together with the resulting unit AAR.
       compileOnly fileTree(dir: file("${project(':app').projectDir}/libs"), include: ['heresdk-navigate-*.aar'])
+
+      // Depend on the core unit to reuse common functionality.
+      api api(project(path: ':here-sdk-units-core'))
   }
   ```
 
-- Set Java compatibility and versioning, and name the output AAR with the version:
+- Set Java compatibility and versioning, and name the output AAR with the version (if not already present in your module's `build.gradle` file):
 
   ```gradle
   android {
@@ -118,7 +125,7 @@ To test a unit without building an AAR for the unit, add a project dependency in
 
 ```gradle
 dependencies {
-    implementation project(path: ':heresdk-units-mapswitcher') // Replace with your module name.
+    implementation project(path: ':here-sdk-units-mapswitcher') // Replace with your module name.
 }
 ```
 
@@ -174,6 +181,8 @@ libs/*.aar
 !libs/*heresdk-units*.aar
 ```
 
+Finally, make sure to sync the project now with your Gradle files.
+
 ## Increase the version of units
 
 When you make meaningful changes to a unit, increase its version in the unit module’s `build.gradle`:
@@ -192,3 +201,13 @@ You can remove a module with the IDE or manually.
 
 - **Android Studio**: Select **File > Project Structure… > Modules**, choose the module, click **– Remove**, sync the project, then delete the module directory from disk.
 - **Manual**: Remove the module from `settings.gradle` (`include(":<module>")`), remove any `project(":<module>")` dependencies from other modules, sync Gradle, and delete the module directory.
+
+## Use assets from the core module
+
+HERE SDK Units share drawable assets via the `heresdk-units-core` module. Use these identifiers:
+
+- Point of interest: `R.drawable.poi`  
+- Route start marker: `R.drawable.poi_start`  
+- Route destination marker: `R.drawable.poi_destination`
+
+Add the core module as a dependency to access these shared assets.

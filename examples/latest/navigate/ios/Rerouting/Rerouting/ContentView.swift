@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2025 HERE Europe B.V.
+ * Copyright (C) 2022-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ struct ContentView: View {
                      }
                  }
                  HStack {
-                     CustomToggleButton(onLabel: "Deviation points: Off", offLabel: "Deviation points: On") {
+                     CustomToggleButton(onLabel: "Deviation points: On", offLabel: "Deviation points: Off") {
                          reroutingExample?.onDeviationPointsButtonClicked()
                      }
                      CustomToggleButton(onLabel: "Toggle speed: 8", offLabel: "Toggle speed: 1") {

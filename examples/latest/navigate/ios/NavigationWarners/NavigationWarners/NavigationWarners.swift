@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ class NavigationWarners : BorderCrossingWarningDelegate,
                                RealisticViewWarningDelegate {
 
     private var visualNavigator: VisualNavigator!
+    private var currentRouteProgress: RouteProgress?
     
     func setupDelegates(_ visualNavigator: VisualNavigator) {
         self.visualNavigator = visualNavigator
@@ -84,6 +85,8 @@ class NavigationWarners : BorderCrossingWarningDelegate,
     // Conform to RouteProgressDelegate.
     // Notifies on the progress along the route including maneuver instructions.
     func onRouteProgressUpdated(_ routeProgress: RouteProgress) {
+        currentRouteProgress = routeProgress
+        
         // [SectionProgress] is guaranteed to be non-empty.
         let distanceToDestination = routeProgress.sectionProgress.last!.remainingDistanceInMeters
         print("Distance to destination in meters: \(distanceToDestination)")
@@ -104,35 +107,8 @@ class NavigationWarners : BorderCrossingWarningDelegate,
         }
 
         let action = nextManeuver.action
-        let roadName = getRoadName(maneuver: nextManeuver)
-        let logMessage = "'\(String(describing: action))' on \(roadName) in \(nextManeuverProgress.remainingDistanceInMeters) meters."
+        let logMessage = "Next maneuver action: '\(String(describing: action))' in \(nextManeuverProgress.remainingDistanceInMeters) meters."
         print(logMessage)
-    }
-
-    func getRoadName(maneuver: Maneuver) -> String {
-        let currentRoadTexts = maneuver.roadTexts
-        let nextRoadTexts = maneuver.nextRoadTexts
-
-        let currentRoadName = currentRoadTexts.names.defaultValue()
-        let currentRoadNumber = currentRoadTexts.numbersWithDirection.defaultValue()
-        let nextRoadName = nextRoadTexts.names.defaultValue()
-        let nextRoadNumber = nextRoadTexts.numbersWithDirection.defaultValue()
-
-        var roadName = nextRoadName == nil ? nextRoadNumber : nextRoadName
-
-        // On highways, we want to show the highway number instead of a possible road name,
-        // while for inner city and urban areas road names are preferred over road numbers.
-        if maneuver.nextRoadType == RoadType.highway {
-            roadName = nextRoadNumber == nil ? nextRoadName : nextRoadNumber
-        }
-
-        if maneuver.action == ManeuverAction.arrive {
-            // We are approaching destination, so there's no next road.
-            roadName = currentRoadName == nil ? currentRoadNumber : currentRoadName
-        }
-
-        // Nil happens only in rare cases, when also the fallback above is nil.
-        return roadName ?? "unnamed road"
     }
 
     // Conform to CurrentSituationLaneAssistanceViewDelegate.
@@ -188,8 +164,22 @@ class NavigationWarners : BorderCrossingWarningDelegate,
     // Conform to SafetyCameraWarningDelegate.
     // Notifies on safety camera warnings as they appear along the road.
     func onSafetyCameraWarningUpdated(_ safetyCameraWarning: SafetyCameraWarning) {
+        // Safety camera warning GeoCoordinates can only be fetched in non-tracking mode.
+        guard let currentRoute = visualNavigator.route else {
+            fatalError("Route cannot be nil")
+        }
+
+        let safetyCameraGeoCoordinates: GeoCoordinates = getGeocoordinatesForRemainingDistance(
+            routeProgress: currentRouteProgress!,
+            remainingObjectDistanceInMeters: safetyCameraWarning.distanceToCameraInMeters,
+            currentRoute: currentRoute
+        )
+
         if safetyCameraWarning.distanceType == .ahead {
-            print("Safety camera warning \(safetyCameraWarning.type) ahead in: \(safetyCameraWarning.distanceToCameraInMeters) with speed limit = \(safetyCameraWarning.speedLimitInMetersPerSecond)m/s")
+            print("Safety camera warning \(safetyCameraWarning.type) ahead in: " +
+                  "\(safetyCameraWarning.distanceToCameraInMeters) m " +
+                  "with speed limit = \(safetyCameraWarning.speedLimitInMetersPerSecond) m/s " +
+                  "at geo-coordinates: \(geoCoordinatesToString(safetyCameraGeoCoordinates))")
         } else if safetyCameraWarning.distanceType == .passed {
             print("Safety camera warning \(safetyCameraWarning.type) passed: \(safetyCameraWarning.distanceToCameraInMeters) with speed limit = \(safetyCameraWarning.speedLimitInMetersPerSecond)m/s")
         } else if safetyCameraWarning.distanceType == .reached {
@@ -216,9 +206,9 @@ class NavigationWarners : BorderCrossingWarningDelegate,
     // Notifies about merging traffic to the current road.
     func onTrafficMergeWarningUpdated(_ trafficMergeWarning: TrafficMergeWarning) {
         if trafficMergeWarning.distanceType == .ahead {
-            print("There is a merging \(trafficMergeWarning.distanceType) ahead in: \(trafficMergeWarning.distanceToTrafficMergeInMeters) meters, merging from the \(trafficMergeWarning.side) side, with lanes = \(trafficMergeWarning.laneCount)")
+            print("There is a merging \(trafficMergeWarning.roadType) ahead in: \(trafficMergeWarning.distanceToTrafficMergeInMeters) meters, merging from the \(trafficMergeWarning.side) side, with lanes = \(trafficMergeWarning.laneCount)")
         } else if trafficMergeWarning.distanceType == .passed {
-            print("A merging \(trafficMergeWarning.distanceType) passed: \(trafficMergeWarning.distanceToTrafficMergeInMeters) meters, merging from the \(trafficMergeWarning.side) side, with lanes = \(trafficMergeWarning.laneCount)")
+            print("A merging \(trafficMergeWarning.roadType) passed: \(trafficMergeWarning.distanceToTrafficMergeInMeters) meters, merging from the \(trafficMergeWarning.side) side, with lanes = \(trafficMergeWarning.laneCount)")
         } else if trafficMergeWarning.distanceType == .reached {
             // Since the traffic merge warning is given relative to a single position on the route,
             // DistanceType.reached will never be given for this warning.
@@ -745,7 +735,7 @@ class NavigationWarners : BorderCrossingWarningDelegate,
     // Notifies whenever any textual attribute of the current road changes, i.e., the current road texts differ
     // from the previous one. This can be useful during tracking mode, when no maneuver information is provided.
     func onRoadTextsUpdated(_ roadTexts: RoadTexts) {
-        // See getRoadName() how to get the current road name from the provided RoadTexts.
+        // See getRoadName() in the "Rerouting" example app to learn how to get the current road name from the provided RoadTexts.
     }
 
     private func setupBorderCrossingWarnings() {
@@ -792,6 +782,7 @@ class NavigationWarners : BorderCrossingWarningDelegate,
 
         // Set the warning distances for road signs.
         visualNavigator.setWarningNotificationDistances(warningType: WarningType.roadSign, warningNotificationDistances: warningNotificationDistances)
+        visualNavigator.roadSignWarningOptions = roadSignWarningOptions
     }
 
     private func setupRealisticViewWarnings() {
@@ -812,5 +803,50 @@ class NavigationWarners : BorderCrossingWarningDelegate,
         // Indicates whether lane recommendation should be used when generating notifications.
         maneuverNotificationOptions.enableLaneRecommendation = true
         visualNavigator.maneuverNotificationOptions = maneuverNotificationOptions
+    }
+    
+    // Returns the GeoCoordinates for an object located at the end of the remaining distance.
+    private func getGeocoordinatesForRemainingDistance(
+        routeProgress: RouteProgress,
+        remainingObjectDistanceInMeters: Double,
+        currentRoute: Route
+    ) -> GeoCoordinates {
+        let currentCCPOffsetInMeters = getOffsetOfCCPOnRouteInMeters(routeProgress: routeProgress, currentRoute: currentRoute)
+        
+        // Calculate the offset along the route for the given object.
+        let remainingDistanceOffsetInMeters = currentCCPOffsetInMeters + remainingObjectDistanceInMeters
+        
+        return getGeoCoordinatesFromOffsetInMeters(
+            geoPolyline: currentRoute.geometry,
+            offsetInMeters: remainingDistanceOffsetInMeters
+        )
+    }
+    
+    // Returns the offset of the current camera position (CCP) on the route in meters.
+    private func getOffsetOfCCPOnRouteInMeters(
+        routeProgress: RouteProgress,
+        currentRoute: Route
+    ) -> Double {
+        let totalLength = Double(currentRoute.lengthInMeters)
+        
+        // SectionProgress is guaranteed to be non-empty.
+        guard let lastSectionProgress = routeProgress.sectionProgress.last else {
+            return 0.0
+        }
+        
+        let remainingDistance = Double(lastSectionProgress.remainingDistanceInMeters)
+        return totalLength - remainingDistance
+    }
+    
+    // Converts an offset in meters along a GeoPolyline to GeoCoordinates using HERE SDK's coordinatesAtOffsetInMeters.
+    private func getGeoCoordinatesFromOffsetInMeters(
+        geoPolyline: GeoPolyline,
+        offsetInMeters: Double
+    ) -> GeoCoordinates {
+        return geoPolyline.coordinatesAt(offsetInMeters: offsetInMeters, direction: .fromBeginning)
+    }
+    
+    private func geoCoordinatesToString(_ geoCoordinates: GeoCoordinates) -> String {
+        return "\(geoCoordinates.latitude), \(geoCoordinates.longitude)"
     }
 }

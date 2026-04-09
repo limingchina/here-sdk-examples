@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 HERE Europe B.V.
+ * Copyright (C) 2025-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,20 +47,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.here.camerakotlin.ui.theme.CameraTheme
-import com.here.sdk.core.engine.AuthenticationMode
-import com.here.sdk.core.engine.SDKNativeEngine
-import com.here.sdk.core.engine.SDKOptions
+import com.here.sdk.core.engine.*
 import com.here.sdk.core.errors.InstantiationErrorException
 import com.here.sdk.mapview.MapScheme
 import com.here.sdk.mapview.MapView
 import com.here.sdk.units.core.utils.EnvironmentLogger
+import com.here.sdk.units.core.utils.PermissionsRequestor
 
 class MainActivity : ComponentActivity() {
 
     private val environmentLogger = EnvironmentLogger()
-    private var permissionsRequestor: PermissionsRequestor? = null
+    private lateinit var permissionsRequestor: PermissionsRequestor
     private var mapView: MapView? = null
     private var cameraExample: CameraExample? = null
+    private var cameraTargetImageView: ImageView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,8 +87,7 @@ class MainActivity : ComponentActivity() {
                         HereMapView(savedInstanceState)
                         ButtonRows()
                         CameraTargetDot(
-                            cameraExample = cameraExample,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -141,35 +142,36 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun CustomButton(onClick: () -> Unit, text: String) {
+        val isDark = isSystemInDarkTheme()
+        val buttonColor = if (isDark) Color(0xCC007070) else Color(0xCC01B9B9)
         Button(
             onClick = onClick,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF005CB9)
+                containerColor = buttonColor
             )
         ) {
-            Text(text)
+            Text(color = MaterialTheme.colorScheme.onBackground, text = text)
         }
     }
 
     @Composable
     fun CameraTargetDot(
-        cameraExample: CameraExample?,
-        modifier: Modifier = Modifier
+        modifier: Modifier = Modifier,
     ) {
-        // Fill the entire parent so we can center or manually move the dot as needed
         CustomImageView(
             modifier = modifier,
             drawableRes = R.drawable.red_dot,
             contentDescription = "Camera Target Dot",
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-        ) { imageView ->
-            // Capture the ImageView reference so CameraExample can manipulate it.
-            // The red circle dot indicates the camera's current target location.
-            // By default, the dot is centered on the full screen map view.
-            // Same as the camera, which is also centered above the map view.
-            // Later on, we will adjust the dot's location on screen programmatically when the camera's target changes.
-            cameraExample?.cameraTargetView = imageView
-        }
+            scaleType = ImageView.ScaleType.CENTER_INSIDE,
+            onImageViewCreated = { imageView ->
+                // Capture the ImageView reference so CameraExample can manipulate it.
+                // The red circle dot indicates the camera's current target location.
+                // By default, the dot is centered on the full screen map view.
+                // Same as the camera, which is also centered above the map view.
+                // Later on, we will adjust the dot's location on screen programmatically when the camera's target changes.
+                cameraTargetImageView = imageView
+            }
+        )
     }
 
     @Composable
@@ -211,17 +213,16 @@ class MainActivity : ComponentActivity() {
 
     // Convenience method to check all permissions that have been added to the AndroidManifest.
     private fun handleAndroidPermissions() {
-        permissionsRequestor?.requestPermissionsFromManifest(
-            object : PermissionsRequestor.ResultListener {
-                override fun permissionsGranted() {
-                    loadMapScene()
-                }
-
-                override fun permissionsDenied(deniedPermissions: List<String>) {
-                    Log.e(TAG, "Permissions denied by the user.")
-                }
+        permissionsRequestor.request(object :
+            PermissionsRequestor.ResultListener {
+            override fun permissionsGranted() {
+                loadMapScene()
             }
-        )
+
+            override fun permissionsDenied() {
+                Log.e(TAG, "Permissions denied by user.")
+            }
+        })
     }
 
     private fun loadMapScene() {
@@ -232,8 +233,13 @@ class MainActivity : ComponentActivity() {
 
         // Load a scene from the HERE SDK to render the map with a map scheme.
         mapViewNonNull.mapScene.loadScene(MapScheme.NORMAL_DAY) { mapError ->
+            // If null, exit this loadScene callback early.
+            val cameraTarget = cameraTargetImageView ?: return@loadScene
             if (mapError == null) {
-                cameraExample = CameraExample(this@MainActivity, mapViewNonNull)
+                cameraExample = CameraExample(
+                    this@MainActivity,
+                    mapViewNonNull,
+                    cameraTargetView = cameraTarget)
             } else {
                 Log.d(TAG, "Loading of map failed: mapError: ${mapError.name}")
             }

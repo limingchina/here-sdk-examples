@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -162,6 +162,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void disposeHERESDK() {
+        if (publicTransportRoutingExample != null) {
+            publicTransportRoutingExample.dispose();
+        }
+
         // Free HERE SDK resources before the application shuts down.
         // Usually, this should be called only on application termination.
         // Afterwards, the HERE SDK is no longer usable unless it is initialized again.

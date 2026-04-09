@@ -26,13 +26,13 @@ For an overview of the existing features, please check the _Developer Guide_ for
 
 > For now, HERE SDK (Navigate) is only available upon request. Please contact your HERE representative to receive access including a set of evaluation credentials.
 
-## List of available example apps (Version 4.24.2.0)
+## List of available example apps (Version 4.25.5.0)
 
 - [List of example apps for the HERE SDK for Android](https://www.here.com/docs/bundle/sdk-for-android-developer-guide/page/topics/examples.html).
 - [List of example apps for the HERE SDK for iOS](https://www.here.com/docs/bundle/sdk-for-ios-developer-guide/page/topics/examples.html).
 - [List of example apps for the HERE SDK for Flutter](https://www.here.com/docs/bundle/sdk-for-flutter-developer-guide/page/topics/examples.html).
 
-> Not all examples are available for all licenses (formerly known as editions) and platforms. This repo hosts apps for the Lite, Explore and Navigate license.
+> Not all examples are available for all licenses (formerly known as editions) and platforms. This repo hosts apps for the Explore and Navigate license.
 
 Find the [latest examples](examples/latest) for the license and platform of your choice:
 

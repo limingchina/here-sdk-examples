@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,10 @@ public class UnitButton  extends AppCompatButton {
         UnitAnimations.applyClickAnimation(this, new float[]{0.92f,0.85f}, new float[]{1.0f,1.0f}, 150);
 
         // Generate and set a unique ID for this button.
-        setId(View.generateViewId());
+        // Only generate ID if not already set (for XML inflation).
+        if (getId() == NO_ID) {
+            setId(View.generateViewId());
+        }
 
         // Set default styling.
         setBackgroundColor(getResources().getColor(R.color.default_units_button_color, null));

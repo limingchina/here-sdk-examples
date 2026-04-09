@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ class RoutingExample {
 
     private func calculateRoute(waypoints: Array<Waypoint>) {
         currentRouteCalculationTask = routingEngine.calculateRoute(with: waypoints,
-                                     carOptions: getCaroptions()) { (routingError, routes) in
+                                     options: getRoutingOptions()) { (routingError, routes) in
             
             if let error = routingError {
                 self.showDialog(title: "Error while calculating a route:", message: "\(error)")
@@ -152,7 +152,7 @@ class RoutingExample {
             self.logRouteSectionDetails(route: self.currentRoute!)
             self.logRouteViolations(route: self.currentRoute!)
             self.logTollDetails(route: self.currentRoute!)
-            self.logRouteLabels(route: self.currentRoute!)
+            self.animateToRoute(route: self.currentRoute!)
         }
     }
     
@@ -183,33 +183,16 @@ class RoutingExample {
         }
     }
     
-    private func logRouteLabels(route: Route) {
-        // Get the list of the street names or route numbers through which the route is going to pass.
-        // Make sure to enable this feature via routeOptions.enableRouteLabels (see below).
-        let routeLabels = route.routeLabels
-        
-        if routeLabels.isEmpty {
-            print("No route labels found for this route.")
-            return
-        }
-        
-        for routeLabel in routeLabels {
-            let name = routeLabel.name
-            let routeLabelType = routeLabel.type
-            print("Route label: \(name.text), Type: \(routeLabelType)")
-        }
-    }
-    
-    private func getCaroptions() -> CarOptions {
-        var carOptions = CarOptions()
-        carOptions.routeOptions.enableTolls = true
+    private func getRoutingOptions() -> RoutingOptions {
+        var routingOptions = RoutingOptions()
+        routingOptions.routeOptions.enableTolls = true
         // This is needed when e.g. requesting TrafficOnRoute data.
-        carOptions.routeOptions.enableRouteHandle = true
+        routingOptions.routeOptions.enableRouteHandle = true
         
         // Enable usage of HOV and HOT lanes.
         // Note: These lanes will only be used if they are available in the selected country.
-        carOptions.allowOptions.allowHov = true
-        carOptions.allowOptions.allowHot = true
+        routingOptions.allowOptions.allowHov = true
+        routingOptions.allowOptions.allowHot = true
         
         // In some cities (e.g., Bogotá, Mexico City, Jakarta), the last digit of the
         // license plate is used intentionally to control traffic in low-emission zones.
@@ -218,18 +201,18 @@ class RoutingExample {
         // for example, on certain week days.
         // Make sure to update this value to the actual last character of your license
         // attached to your vehicle!
-        carOptions.lastCharacterOfLicensePlate = "7";
+        var vehicleSpecification = VehicleSpecification()
+        vehicleSpecification.lastCharacterOfLicensePlate = "7"
 
-        // When occupantsNumber is greater than 1, it enables the vehicle to use HOV/HOT lanes.
-        carOptions.occupantsNumber = 4
+        // When occupancy is greater than 1, it enables the vehicle to use HOV/HOT lanes.
+        vehicleSpecification.occupancy = 4
+        routingOptions.transportSpecification.vehicleSpecification = vehicleSpecification
         
         // Disabled - Traffic optimization is completely disabled, including long-term road closures. It helps in producing stable routes.
         // Time dependent - Traffic optimization is enabled, the shape of the route will be adjusted according to the traffic situation which depends on departure time and arrival time.
-        carOptions.routeOptions.trafficOptimizationMode = disableOptimization ? TrafficOptimizationMode.disabled : TrafficOptimizationMode.timeDependent
-        
-        // Specifies whether route labels should be included in the route response.
-        carOptions.routeOptions.enableRouteLabels = true;
-        return carOptions
+        routingOptions.routeOptions.trafficOptimizationMode = disableOptimization ? TrafficOptimizationMode.disabled : TrafficOptimizationMode.timeDependent
+
+        return routingOptions
     }
     
     func toggleTrafficOptimization() {
@@ -357,7 +340,6 @@ class RoutingExample {
         } catch let error {
             fatalError("Failed to render MapPolyline. Cause: \(error)")
         }
-        
         // Optionally, render traffic on route.
         // Please note that this is not the recommended way. It is recommeded to display the default traffic polylines adjacent to route polyline.
         showTrafficOnRoute(route)
@@ -380,6 +362,26 @@ class RoutingExample {
             + ", Location: \(maneuverLocation)"
             print(maneuverInfo)
         }
+    }
+    
+    private func animateToRoute(route: Route) {
+        let bearing: Double = 0
+        let tilt: Double = 0
+        let padding: Double = 50
+        let adjustedWidth = max(0, mapView.viewportSize.width - 2 * padding)
+        let adjustedHeight = max(0, mapView.viewportSize.height - 2 * padding)
+        let origin = Point2D(x: padding, y: padding)
+        let mapViewport = Rectangle2D(origin: origin,
+                                      size: Size2D(width: adjustedWidth, height: adjustedHeight))
+        let geoOrientationUpdate = GeoOrientationUpdate(GeoOrientation(bearing: bearing, tilt: tilt))
+        let mapCameraUpdate = MapCameraUpdateFactory.lookAt(area: route.boundingBox,
+                                                   orientation: geoOrientationUpdate,
+                                                   viewRectangle: mapViewport)
+        let timeIntervalInSeconds: TimeInterval = 3
+        let animation = MapCameraAnimationFactory.createAnimation(from: mapCameraUpdate,
+                                                                  duration: timeIntervalInSeconds,
+                                                                  easing: Easing(EasingFunction.inCubic))
+        mapView.camera.startAnimation(animation)
     }
     
     func addWaypoints() {

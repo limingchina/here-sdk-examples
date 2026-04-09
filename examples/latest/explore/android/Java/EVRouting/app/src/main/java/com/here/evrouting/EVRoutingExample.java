@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import com.here.sdk.core.Point2D;
 import com.here.sdk.core.Rectangle2D;
 import com.here.sdk.core.Size2D;
 import com.here.sdk.core.errors.InstantiationErrorException;
+import com.here.sdk.core.threading.TaskHandle;
 import com.here.sdk.gestures.TapListener;
 import com.here.sdk.mapview.LineCap;
 import com.here.sdk.mapview.MapCamera;
@@ -61,7 +62,9 @@ import com.here.sdk.routing.ChargingConnectorType;
 import com.here.sdk.routing.ChargingStation;
 import com.here.sdk.routing.ChargingStop;
 import com.here.sdk.routing.ChargingSupplyType;
-import com.here.sdk.routing.EVCarOptions;
+import com.here.sdk.routing.BatterySpecifications;
+import com.here.sdk.routing.ElectricVehicleOptions;
+import com.here.sdk.routing.EmpiricalConsumptionModel;
 import com.here.sdk.routing.EVMobilityServiceProviderPreferences;
 import com.here.sdk.routing.Isoline;
 import com.here.sdk.routing.IsolineCalculationMode;
@@ -73,8 +76,10 @@ import com.here.sdk.routing.PostAction;
 import com.here.sdk.routing.Route;
 import com.here.sdk.routing.RoutingEngine;
 import com.here.sdk.routing.RoutingError;
+import com.here.sdk.routing.RoutingOptions;
 import com.here.sdk.routing.Section;
 import com.here.sdk.routing.SectionNotice;
+import com.here.sdk.routing.Span;
 import com.here.sdk.routing.Waypoint;
 import com.here.sdk.search.CategoryQuery;
 import com.here.sdk.search.Details;
@@ -99,6 +104,8 @@ import java.util.List;
 // (isoline routing).
 public class EVRoutingExample {
 
+    private static final String TAG = EVRoutingExample.class.getName();
+
     private final Context context;
     private final MapView mapView;
     private final List<MapMarker> mapMarkers = new ArrayList<>();
@@ -110,6 +117,7 @@ public class EVRoutingExample {
     private GeoCoordinates destinationGeoCoordinates;
     private final List<String> chargingStationsIDs = new ArrayList<>();
     private final IsolineRoutingEngine isolineRoutingEngine;
+    private TaskHandle currentRouteCalculationTask;
 
     // Metadata keys used when picking a charging station on the map.
     private final String SUPPLIER_NAME_METADATA_KEY = "supplier_name";
@@ -120,6 +128,10 @@ public class EVRoutingExample {
     private final String RESERVED_CONNECTORS_METADATA_KEY = "reserved_connectors";
     private final String LAST_UPDATED_METADATA_KEY = "last_updated";
     private final String REQUIRED_CHARGING_METADATA_KEY = "required_charging";
+
+    // Store the user-defined charging stop to verify whether it was
+    // included or modified in the calculated route, based on reachability.
+    private Waypoint lastPlannedChargingStopWaypoint = null;
 
     public EVRoutingExample(Context context, MapView mapView) {
         this.context = context;
@@ -157,6 +169,11 @@ public class EVRoutingExample {
     // Includes a user waypoint to add an intermediate charging stop along the route, 
     // in addition to charging stops that are added by the engine.
     public void addEVRouteButtonClicked() {
+        if (isRouteCalculationRunning()) {
+            Log.d(TAG, "Previous route calculation still in progress.");
+            return;
+        }
+
         chargingStationsIDs.clear();
 
         startGeoCoordinates = createRandomGeoCoordinatesInViewport();
@@ -164,10 +181,11 @@ public class EVRoutingExample {
         Waypoint startWaypoint = new Waypoint(startGeoCoordinates);
         Waypoint destinationWaypoint = new Waypoint(destinationGeoCoordinates);
         Waypoint plannedChargingStopWaypoint = createUserPlannedChargingStopWaypoint();
+        lastPlannedChargingStopWaypoint = plannedChargingStopWaypoint;
         List<Waypoint> waypoints =
                 new ArrayList<>(Arrays.asList(startWaypoint, plannedChargingStopWaypoint, destinationWaypoint));
 
-        routingEngine.calculateRoute(waypoints, getEVCarOptions(), new CalculateRouteCallback() {
+        currentRouteCalculationTask = routingEngine.calculateRoute(waypoints, getEVRoutingOptions(), new CalculateRouteCallback() {
             @Override
             public void onRouteCalculated(RoutingError routingError, List<Route> list) {
                 if (routingError != null) {
@@ -180,9 +198,18 @@ public class EVRoutingExample {
                 showRouteOnMap(route);
                 logRouteViolations(route);
                 logEVDetails(route);
+
+                logSpanConsumption(route);
+                logSectionArrivalCharge(route);
+                verifyAndLogPlannedStopOutcome(route);
+
                 searchAlongARoute(route);
             }
         });
+    }
+
+    private boolean isRouteCalculationRunning() {
+        return currentRouteCalculationTask != null && !currentRouteCalculationTask.isFinished();
     }
 
     // Simulate a user planned stop based on random coordinates.
@@ -205,7 +232,7 @@ public class EVRoutingExample {
         // Add a user-defined charging stop.
         //
         // Note: To specify a ChargingStop, you must also set totalCapacityInKilowattHours,
-        // initialChargeInKilowattHours, and chargingCurve using BatterySpecification in EVCarOptions.
+        // initialChargeInKilowattHours, and chargingCurve using BatterySpecifications in ElectricVehicleOptions.
         // If any of these values are missing, the route calculation will fail with an invalid parameter error.
         ChargingStop plannedChargingStop = new ChargingStop(powerInKilowatts, currentInAmperes, voltageInVolts, ChargingSupplyType.DC, minimumDuration, maximumDuration);
 
@@ -214,7 +241,7 @@ public class EVRoutingExample {
         return plannedChargingStopWaypoint;
     }
 
-    private void applyEMSPPreferences(EVCarOptions evCarOptions) {
+    private void applyEMSPPreferences(ElectricVehicleOptions evOptions) {
         // You can get a list of all E-Mobility Service Providers and their partner IDs by using the request described here:
         // https://www.here.com/docs/bundle/ev-charge-points-api-developer-guide/page/topics/example-charging-station.html.
         // No more than 10 E-Mobility Service Providers should be specified.
@@ -231,55 +258,65 @@ public class EVRoutingExample {
         // Example code for an alternative provider.
         List<String> alternativeProviders = Collections.singletonList("12345678-0000-abcd-0000-000123456789");
 
-        evCarOptions.evMobilityServiceProviderPreferences = new EVMobilityServiceProviderPreferences();
-        evCarOptions.evMobilityServiceProviderPreferences.high = preferredProviders;
-        evCarOptions.evMobilityServiceProviderPreferences.low = leastPreferredProviders;
-        evCarOptions.evMobilityServiceProviderPreferences.medium = alternativeProviders;
+        evOptions.evMobilityServiceProviderPreferences = new EVMobilityServiceProviderPreferences();
+        evOptions.evMobilityServiceProviderPreferences.high = preferredProviders;
+        evOptions.evMobilityServiceProviderPreferences.low = leastPreferredProviders;
+        evOptions.evMobilityServiceProviderPreferences.medium = alternativeProviders;
     }
 
-    private EVCarOptions getEVCarOptions()  {
-        EVCarOptions evCarOptions = new EVCarOptions();
+    private RoutingOptions getEVRoutingOptions()  {
+        RoutingOptions routingOptions = new RoutingOptions();
+        routingOptions.evOptions = new ElectricVehicleOptions();
 
+        // Configure a data-driven EV energy consumption model that combines empirically
+        // derived vehicle parameters with speed and elevation characteristics.
+        EmpiricalConsumptionModel empiricalConsumptionModel = new EmpiricalConsumptionModel();
         // The below three options are the minimum you must specify or routing will result in an error.
-        evCarOptions.consumptionModel.ascentConsumptionInWattHoursPerMeter = 9;
-        evCarOptions.consumptionModel.descentRecoveryInWattHoursPerMeter = 4.3;
-        evCarOptions.consumptionModel.freeFlowSpeedTable = new HashMap<Integer, Double>() {{
+        empiricalConsumptionModel.ascentConsumptionInWattHoursPerMeter = 9;
+        empiricalConsumptionModel.descentRecoveryInWattHoursPerMeter = 4.3;
+        empiricalConsumptionModel.freeFlowSpeedTable = new HashMap<Integer, Double>() {{
             put(0, 0.239);
             put(27, 0.239);
             put(60, 0.196);
             put(90, 0.238);
         }};
 
+        // Set the empirical consumption model so the EV routing
+        // can estimate energy usage based on speed and elevation.
+        routingOptions.evOptions.empiricalConsumptionModel = empiricalConsumptionModel;
+
         // Must be 0 for isoline calculation.
-        evCarOptions.routeOptions.alternatives = 0;
+        routingOptions.routeOptions.alternatives = 0;
 
         // Ensure that the vehicle does not run out of energy along the way
         // and charging stations are added as additional waypoints.
-        evCarOptions.ensureReachability = true;
+        routingOptions.evOptions.ensureReachability = true;
 
         // The below options are required when setting the ensureReachability option to true
         // (AvoidanceOptions need to be empty).
-        evCarOptions.avoidanceOptions = new AvoidanceOptions();
-        evCarOptions.routeOptions.speedCapInMetersPerSecond = null;
-        evCarOptions.routeOptions.optimizationMode = OptimizationMode.FASTEST;
-        evCarOptions.batterySpecifications.connectorTypes =
+        routingOptions.avoidanceOptions = new AvoidanceOptions();
+        routingOptions.routeOptions.speedCapInMetersPerSecond = null;
+        routingOptions.routeOptions.optimizationMode = OptimizationMode.FASTEST;
+
+        routingOptions.evOptions.batterySpecifications = new BatterySpecifications();
+        routingOptions.evOptions.batterySpecifications.connectorTypes =
                 new ArrayList<>(Arrays.asList(ChargingConnectorType.TESLA,
                     ChargingConnectorType.IEC_62196_TYPE_1_COMBO, ChargingConnectorType.IEC_62196_TYPE_2_COMBO));
-        evCarOptions.batterySpecifications.totalCapacityInKilowattHours = 80.0;
-        evCarOptions.batterySpecifications.initialChargeInKilowattHours = 10.0;
-        evCarOptions.batterySpecifications.targetChargeInKilowattHours = 72.0;
-        evCarOptions.batterySpecifications.chargingCurve = new HashMap<Double, Double>() {{
+        routingOptions.evOptions.batterySpecifications.totalCapacityInKilowattHours = 80.0;
+        routingOptions.evOptions.batterySpecifications.initialChargeInKilowattHours = 10.0;
+        routingOptions.evOptions.batterySpecifications.targetChargeInKilowattHours = 72.0;
+        routingOptions.evOptions.batterySpecifications.chargingCurve = new HashMap<Double, Double>() {{
             put(0.0, 239.0);
             put(64.0, 111.0);
             put(72.0, 1.0);
         }};
 
         // Apply EV mobility service provider preferences (eMSP).
-        applyEMSPPreferences(evCarOptions);
+        applyEMSPPreferences(routingOptions.evOptions);
 
         // Note: More EV options are available, the above shows only the minimum viable options.
 
-        return evCarOptions;
+        return routingOptions;
     }
 
     private void logEVDetails(Route route) {
@@ -339,6 +376,141 @@ public class EVRoutingExample {
             }
 
             sectionIndex += 1;
+        }
+    }
+
+    // Logs estimated energy consumption by EV vehicle per span.
+    private void logSpanConsumption(Route route) {
+        int sectionIdx = 0;
+        for (Section section : route.getSections()) {
+            int spanIdx = 0;
+            for (Span span : section.getSpans()) {
+                Double kWh = span.getConsumptionInKilowattHours();
+                if (kWh != null) {
+                    Log.d("EVSpan: ", "Section: " + sectionIdx + " span " + spanIdx + " consumption: " + String.format("%.3f kWh", kWh));
+                } else {
+                    Log.d("EVSpan: ", "Section: " + sectionIdx + " span " + spanIdx + " consumption: n/a");
+                }
+                spanIdx++;
+            }
+            sectionIdx++;
+        }
+    }
+
+    // Logs remaining EV battery charge at the end of each route's section
+    // and verifies the vehicle reachability to the destination.
+    private void logSectionArrivalCharge(Route route) {
+        int sectionIndex = 0;
+
+        // Tracks the most recent arrival charge value; used to determine the final battery state.
+        Double lastSectionArrivalChargeKWh = null;
+
+        // Iterate through all route sections. Each section represents a drive segment
+        // between two waypoints or between two charging stops.
+        for (Section routeSection : route.getSections()) {
+
+            // Retrieve the estimated battery charge when arriving at the end of this section.
+            // If offline data or estimation is missing, this value can be null.
+            Double remainingChargeAtArrivalKWh = (routeSection.getArrivalPlace() != null)
+                    ? routeSection.getArrivalPlace().chargeInKilowattHours
+                    : null;
+
+            // Log the per-section remaining charge in kWh.
+            // This can help to analyze battery consumption patterns along the route.
+            if (remainingChargeAtArrivalKWh != null) {
+                Log.i("EVArrival: ", "Section: " + sectionIndex
+                        + ": remaining charge upon arrival = "
+                        + String.format("%.2f", remainingChargeAtArrivalKWh) + " kWh");
+
+                // Update the last known arrival charge; represents the vehicle's battery
+                // state after completing this section.
+                lastSectionArrivalChargeKWh = remainingChargeAtArrivalKWh;
+            } else {
+                Log.i("EVArrival: ", "Section: " + sectionIndex
+                        + ": remaining charge upon arrival not available");
+            }
+            sectionIndex++;
+        }
+
+        // After processing all sections, validate the vehicle's charge level
+        // at the route's destination (final arrival point).
+        if (lastSectionArrivalChargeKWh != null) {
+            Log.i("EVArrival: ", "Final destination arrival charge = "
+                    + String.format("%.2f", lastSectionArrivalChargeKWh) + " kWh");
+
+            // A negative or very low charge indicates that the vehicle cannot reach
+            // the destination with the current EV configuration.
+            if (lastSectionArrivalChargeKWh < 0.0) {
+                Log.w("EVArrival: ",
+                        "Destination not reachable with the current battery configuration.");
+            }
+        } else {
+            Log.w("EVArrival: ", "No arrival charge data available for any section in this route.");
+        }
+    }
+
+    // Verify and log whether the user-defined charging stop was included, adjusted,
+    // or omitted in the calculated route based on reachability and optimization.
+    private void verifyAndLogPlannedStopOutcome(Route route) {
+        String TAG_CHARGING_STOP = "EVChargingStop: ";
+        // If there is no user-defined charging stop to verify, return.
+        if (lastPlannedChargingStopWaypoint == null) {
+            Log.d(TAG_CHARGING_STOP, "No user-planned charging stop to verify.");
+            return;
+        }
+
+        final double COORDINATE_MATCH_RADIUS_METERS = 200.0;
+        boolean isStopIncludedInRoute = false;
+        String matchedChargingStationName = null;
+
+        GeoCoordinates plannedStopCoordinates = lastPlannedChargingStopWaypoint.coordinates;
+
+        for (Section routeSection : route.getSections()) {
+            // Departure place check.
+            // Determine whether the section's starting point corresponds to the user-defined charging stop.
+            if (routeSection.getDeparturePlace().chargingStation != null) {
+                // Retrieve the map-matched coordinates of the departure charging station.
+                GeoCoordinates departureStationCoordinates = routeSection.getDeparturePlace().mapMatchedCoordinates;
+
+                // Compare departure coordinates and mark as matched if within 200 m, indicating the user stop was included in the route.
+                if (departureStationCoordinates.distanceTo(plannedStopCoordinates) <= COORDINATE_MATCH_RADIUS_METERS) {
+                    isStopIncludedInRoute = true;
+                    matchedChargingStationName = routeSection.getDeparturePlace().chargingStation.name;
+                    break;
+                }
+            }
+
+            // Arrival place check.
+            // Determine whether the section’s endpoint corresponds to the user-defined charging stop.
+            if (routeSection.getArrivalPlace().chargingStation != null) {
+                // Retrieve the map-matched coordinates of the arrival charging station.
+                GeoCoordinates arrivalStationCoordinates = routeSection.getArrivalPlace().mapMatchedCoordinates;
+
+                // Compare arrival coordinates and mark as matched if within 200 m, confirming the user stop was applied.
+                if (arrivalStationCoordinates.distanceTo(plannedStopCoordinates) <= COORDINATE_MATCH_RADIUS_METERS) {
+                    isStopIncludedInRoute = true;
+                    matchedChargingStationName = routeSection.getArrivalPlace().chargingStation.name;
+                    break;
+                }
+            }
+        }
+
+        // Log verification results
+        if (isStopIncludedInRoute) {
+            Log.i(TAG_CHARGING_STOP,
+                    "User-defined charging stop was included in the calculated route"
+                            + (matchedChargingStationName != null
+                            ? " (≈ " + matchedChargingStationName + ")."
+                            : "."));
+            Log.d(TAG_CHARGING_STOP,
+                    "Verification result: Stop successfully matched within "
+                            + COORDINATE_MATCH_RADIUS_METERS + " meters.");
+        } else {
+            Log.i(TAG_CHARGING_STOP,
+                    "User-defined charging stop was adjusted or replaced during route optimization.");
+            Log.w(TAG_CHARGING_STOP,
+                    "Verification result: Planned stop coordinates did not match any charging station within "
+                            + COORDINATE_MATCH_RADIUS_METERS + " meters.");
         }
     }
 
@@ -560,12 +732,12 @@ public class EVRoutingExample {
 
         // This finds the area that an electric vehicle can reach by consuming 400 Wh or less,
         // while trying to take the fastest possible route into any possible straight direction from start.
-        // Note: We have specified evCarOptions.routeOptions.optimizationMode = OptimizationMode.FASTEST for EV car options above.
+        // Note: We have specified routingOptions.evOptions.ensureReachability and routingOptions.routeOptions.optimizationMode = OptimizationMode.FASTEST for EV options above.
         List<Integer> rangeValues = Collections.singletonList(400);
 
         IsolineOptions.Calculation calculationOptions =
                 new IsolineOptions.Calculation(IsolineRangeType.CONSUMPTION_IN_WATT_HOURS, rangeValues, IsolineCalculationMode.BALANCED);
-        IsolineOptions isolineOptions = new IsolineOptions(calculationOptions, getEVCarOptions());
+        IsolineOptions isolineOptions = new IsolineOptions(calculationOptions, getEVRoutingOptions());
 
         isolineRoutingEngine.calculateIsoline(new Waypoint(startGeoCoordinates), isolineOptions, new CalculateIsolineCallback() {
             @Override
@@ -666,5 +838,11 @@ public class EVRoutingExample {
         builder.setTitle(title);
         builder.setMessage(message);
         builder.show();
+    }
+
+    // Dispose the RoutingEngine instance to cancel any pending requests
+    // and shut it down for proper resource cleanup.
+    public void dispose() {
+        routingEngine.dispose();
     }
 }

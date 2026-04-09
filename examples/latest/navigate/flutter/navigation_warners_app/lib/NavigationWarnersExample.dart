@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License")
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,121 @@
  * License-Filename: LICENSE
  */
 
+import 'dart:async';
+
+import 'package:here_sdk/animation.dart' as HERE;
 import 'package:flutter/services.dart';
 import 'package:here_sdk/core.dart';
+import 'package:here_sdk/core.errors.dart';
+import 'package:here_sdk/mapview.dart';
 import 'package:here_sdk/navigation.dart';
 import 'package:here_sdk/routing.dart' as HERE;
 import 'package:here_sdk/routing.dart';
 
+enum RoadType { highway, rural, urban }
+
 // This class combines the various events that can be emitted during turn-by-turn navigation.
 // Note that this class does not show an exhaustive list of all possible events.
 class NavigationWarnersExample {
-  VisualNavigator _visualNavigator;
+  final HereMapController _hereMapController;
+  late final VisualNavigator _visualNavigator;
+  late final HERE.RoutingEngine _routingEngine;
+  LocationSimulator? _locationSimulator;
+  bool _isGuidanceRunning = false;
+  RouteProgress? currentRouteProgress;
 
-  NavigationWarnersExample(VisualNavigator visualNavigator) : _visualNavigator = visualNavigator {}
+  NavigationWarnersExample(this._hereMapController) {
+    try {
+      _visualNavigator = VisualNavigator();
+    } on InstantiationException {
+      throw Exception("Initialization of VisualNavigator failed.");
+    }
 
-  void setupListeners() {
+    try {
+      _routingEngine = HERE.RoutingEngine();
+    } on InstantiationException {
+      throw Exception('Initialization of RoutingEngine failed.');
+    }
+  }
+
+  bool isGuidanceRunning() {
+    return _isGuidanceRunning;
+  }
+
+  void startGuidance(GeoCoordinates startGeoCoordinates, GeoCoordinates destinationGeoCoordinates) {
+    _routingEngine.calculateCarRoute(
+      [HERE.Waypoint(startGeoCoordinates), HERE.Waypoint(destinationGeoCoordinates)],
+      HERE.CarOptions(),
+      (HERE.RoutingError? routingError, List<HERE.Route>? routeList) {
+        if (routingError == null && routeList != null && routeList.isNotEmpty) {
+          _startGuidanceWithRoute(routeList.first);
+        } else {
+          print('Error while calculating a route: $routingError');
+        }
+      },
+    );
+  }
+
+  void stopGuidance() {
+    _locationSimulator?.stop();
+    _locationSimulator = null;
+
+    _visualNavigator.route = null;
+    _visualNavigator.stopRendering();
+    _isGuidanceRunning = false;
+  }
+
+  void animateToRoutePreview(GeoCoordinates startGeoCoordinates, GeoCoordinates destinationGeoCoordinates) {
+    double bearing = 0;
+    double tilt = 0;
+    double distanceInMeters = 1000 * 10;
+
+    // We want to show the route fitting in the map view with an additional padding of 300 pixels.
+    Point2D origin = Point2D(300, 300);
+    Size2D sizeInPixels = Size2D(
+      _hereMapController.viewportSize.width - 600,
+      _hereMapController.viewportSize.height - 600,
+    );
+    Rectangle2D mapViewport = Rectangle2D(origin, sizeInPixels);
+
+    List<GeoCoordinates> coordinatesList = [startGeoCoordinates, destinationGeoCoordinates];
+
+    // Animate to the route overview.
+    MapCameraUpdate update = MapCameraUpdateFactory.lookAtPoints(
+      coordinatesList,
+      mapViewport,
+      GeoOrientationUpdate(bearing, tilt),
+      MapMeasure(MapMeasureKind.distanceInMeters, distanceInMeters),
+    );
+
+    MapCameraAnimation animation = MapCameraAnimationFactory.createAnimationFromUpdateWithEasing(
+      update,
+      const Duration(milliseconds: 500),
+      HERE.Easing(HERE.EasingFunction.inCubic),
+    );
+    _hereMapController.camera.startAnimation(animation);
+  }
+
+  void _startGuidanceWithRoute(HERE.Route route) {
+    _setupListeners();
+    _visualNavigator.startRendering(_hereMapController);
+    _visualNavigator.route = route;
+    _setupLocationSource(route);
+    _isGuidanceRunning = true;
+  }
+
+  void _setupLocationSource(HERE.Route route) {
+    try {
+      _locationSimulator = LocationSimulator.withRoute(route, LocationSimulatorOptions());
+    } on InstantiationException {
+      throw Exception("Initialization of LocationSimulator failed.");
+    }
+
+    _locationSimulator!.listener = _visualNavigator;
+    _locationSimulator!.start();
+  }
+
+  void _setupListeners() {
     _setupSpeedWarnings();
     _setupSafetyCameraWarningOptions();
     _setupManeuverNotificationOptions();
@@ -38,6 +139,8 @@ class NavigationWarnersExample {
     // Notifies on the progress along the route including maneuver instructions.
     // These maneuver instructions can be used to compose a visual representation of the next maneuver actions.
     _visualNavigator.routeProgressListener = RouteProgressListener((RouteProgress routeProgress) {
+      this.currentRouteProgress = routeProgress;
+
       // Handle results from onRouteProgressUpdated():
       List<SectionProgress> sectionProgressList = routeProgress.sectionProgress;
       // sectionProgressList is guaranteed to be non-empty.
@@ -62,11 +165,9 @@ class NavigationWarnersExample {
       }
 
       ManeuverAction action = nextManeuver.action;
-      String roadName = _getRoadName(nextManeuver);
       String logMessage =
+          "Next maneuver action: " +
           action.name +
-          ' on ' +
-          roadName +
           ' in ' +
           nextManeuverProgress.remainingDistanceInMeters.toString() +
           ' meters.';
@@ -120,7 +221,7 @@ class NavigationWarnersExample {
       } else if (milestone.waypointIndex == null && milestoneStatus == MilestoneStatus.reached) {
         // For example, when transport mode changes due to a ferry a system-defined waypoint may have been added.
         print("A system-defined waypoint was reached at: " + milestone.mapMatchedCoordinates.toString());
-      } else if (milestone.waypointIndex == null && milestoneStatus == MilestoneStatus.reached) {
+      } else if (milestone.waypointIndex == null && milestoneStatus == MilestoneStatus.missed) {
         // For example, when transport mode changes due to a ferry a system-defined waypoint may have been added.
         print("A system-defined waypoint was missed at: " + milestone.mapMatchedCoordinates.toString());
       }
@@ -333,7 +434,7 @@ class NavigationWarnersExample {
         lastGeoCoordinatesOnRoute = route.sections.first.departurePlace.originalCoordinates!;
       }
 
-      int distanceInMeters = currentGeoCoordinates.distanceTo(lastGeoCoordinatesOnRoute) as int;
+      int distanceInMeters = currentGeoCoordinates.distanceTo(lastGeoCoordinatesOnRoute).toInt();
       print("RouteDeviation in meters is " + distanceInMeters.toString());
 
       // Now, an application needs to decide if the user has deviated far enough and
@@ -456,6 +557,7 @@ class NavigationWarnersExample {
 
     // Set the warning distances for road signs.
     _visualNavigator.setWarningNotificationDistances(WarningType.roadSign, warningNotificationDistances);
+    _visualNavigator.roadSignWarningOptions = roadSignWarningOptions;
 
     // Notifies on road shields as they appear along the road.
     _visualNavigator.roadSignWarningListener = RoadSignWarningListener((RoadSignWarning roadSignWarning) {
@@ -483,15 +585,20 @@ class NavigationWarnersExample {
     _visualNavigator.safetyCameraWarningListener = SafetyCameraWarningListener((
       SafetyCameraWarning safetyCameraWarning,
     ) {
+      final currentRoute = _visualNavigator.route;
+
+      final safetyCameraGeoCoordinates = getGeocoordinatesForRemainingDistance(
+        currentRouteProgress!,
+        safetyCameraWarning.distanceToCameraInMeters,
+        currentRoute!,
+      );
+
       if (safetyCameraWarning.distanceType == DistanceType.ahead) {
         print(
-          "Safety camera warning " +
-              safetyCameraWarning.type.name +
-              " ahead in: " +
-              safetyCameraWarning.distanceToCameraInMeters.toString() +
-              "with speed limit =" +
-              safetyCameraWarning.speedLimitInMetersPerSecond.toString() +
-              "m/s",
+          'Safety camera warning ${safetyCameraWarning.type.name} ahead in: '
+              '${safetyCameraWarning.distanceToCameraInMeters} m '
+              'with speed limit = ${safetyCameraWarning.speedLimitInMetersPerSecond} m/s '
+              'at geo-coordinates: ${geoCoordinatesToString(safetyCameraGeoCoordinates)}',
         );
       } else if (safetyCameraWarning.distanceType == DistanceType.passed) {
         print(
@@ -564,7 +671,7 @@ class NavigationWarnersExample {
     // Notifies whenever any textual attribute of the current road changes, i.e., the current road texts differ
     // from the previous one. This can be useful during tracking mode, when no maneuver information is provided.
     _visualNavigator.roadTextsListener = RoadTextsListener((RoadTexts roadTexts) {
-      // See _getRoadName() how to get the current road name from the provided RoadTexts.
+      // See _getRoadName() in the "rerouting_app" example app to learn how to get the current road name from the provided RoadTexts.
     });
 
     // Notifies on signposts together with complex junction views.
@@ -820,31 +927,49 @@ class NavigationWarnersExample {
     return speedLimit.effectiveSpeedLimitInMetersPerSecond();
   }
 
-  String _getRoadName(Maneuver maneuver) {
-    RoadTexts currentRoadTexts = maneuver.roadTexts;
-    RoadTexts nextRoadTexts = maneuver.nextRoadTexts;
+  // Returns the GeoCoordinates for an object located at the end of the remaining distance.
+  GeoCoordinates getGeocoordinatesForRemainingDistance(
+      RouteProgress routeProgress,
+      double remainingObjectDistanceInMeters,
+      Route currentRoute,) {
+    final currentCCPOffsetInMeters =
+    getOffsetOfCCPOnRouteInMeters(routeProgress, currentRoute);
 
-    String? currentRoadName = currentRoadTexts.names.getDefaultValue();
-    String? currentRoadNumber = currentRoadTexts.numbersWithDirection.getDefaultValue();
-    String? nextRoadName = nextRoadTexts.names.getDefaultValue();
-    String? nextRoadNumber = nextRoadTexts.numbersWithDirection.getDefaultValue();
+    // Calculate the offset along the route for the given object.
+    final remainingDistanceOffsetInMeters =
+        currentCCPOffsetInMeters + remainingObjectDistanceInMeters;
 
-    String? roadName = nextRoadName == null ? nextRoadNumber : nextRoadName;
-
-    // On highways, we want to show the highway number instead of a possible road name,
-    // while for inner city and urban areas road names are preferred over road numbers.
-    if (maneuver.nextRoadType == RoadType.highway) {
-      roadName = nextRoadNumber == null ? nextRoadName : nextRoadNumber;
-    }
-
-    if (maneuver.action == ManeuverAction.arrive) {
-      // We are approaching the destination, so there's no next road.
-      roadName = currentRoadName == null ? currentRoadNumber : currentRoadName;
-    }
-
-    // Happens only in rare cases, when also the fallback above is null.
-    roadName ??= 'unnamed road';
-
-    return roadName;
+    return getGeoCoordinatesFromOffsetInMeters(
+      currentRoute.geometry,
+      remainingDistanceOffsetInMeters,
+    );
   }
+
+  // Returns the offset of the current camera position (CCP) on the route in meters.
+  double getOffsetOfCCPOnRouteInMeters(RouteProgress routeProgress,
+      Route currentRoute,) {
+    final totalLength = currentRoute.lengthInMeters.toDouble();
+
+    // SectionProgress is guaranteed to be non-empty.
+    final sectionProgressList = routeProgress.sectionProgress;
+    final remainingDistance = sectionProgressList.last.remainingDistanceInMeters
+        .toDouble();
+
+    return totalLength - remainingDistance;
+  }
+
+  // Converts an offset in meters along a GeoPolyline to GeoCoordinates using HERE SDK's coordinatesAtOffsetInMeters.
+  GeoCoordinates getGeoCoordinatesFromOffsetInMeters(GeoPolyline geoPolyline,
+      double offsetInMeters,) {
+    return geoPolyline.coordinatesAtOffsetInMeters(
+      offsetInMeters,
+      GeoPolylineDirection.fromBeginning,
+    );
+  }
+
+  // Converts GeoCoordinates to a human-readable string.
+  String geoCoordinatesToString(GeoCoordinates geoCoordinates) {
+    return '${geoCoordinates.latitude}, ${geoCoordinates.longitude}';
+  }
+
 }

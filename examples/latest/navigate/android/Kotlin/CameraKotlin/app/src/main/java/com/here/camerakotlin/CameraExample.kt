@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 HERE Europe B.V.
+ * Copyright (C) 2025-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,9 +45,11 @@ import com.here.time.Duration
  * a new transform center that influences those operations, and to move to a new location.
  * For more features of the Camera class, please consult the API Reference and the Developer's Guide.
  */
-class CameraExample(private val context: Context, private val mapView: MapView) {
-
-    var cameraTargetView: ImageView? = null
+class CameraExample(
+    private val context: Context,
+    private val mapView: MapView,
+    private val cameraTargetView: ImageView
+) {
     private var poiMapCircle: MapPolygon? = null
     val camera: MapCamera = mapView.camera
 
@@ -60,6 +62,9 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
 
         addCameraObserver()
         setTapGestureHandler(mapView)
+
+        // Align the cameraTargetView to the screen center once the MapView is ready.
+        mapView.post { centerCameraTargetViewOnCurrentTarget() }
 
         showDialog("Note", "Tap the map to set a new transform center.")
     }
@@ -76,6 +81,10 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
         val geoCoordinates: GeoCoordinates = getRandomGeoCoordinates()
         updatePoiCircle(geoCoordinates)
         flyTo(geoCoordinates)
+        mapView.postDelayed(
+            { moveCameraTargetViewToGeoCoordinates(geoCoordinates) },
+            3000
+        )
     }
 
     private fun flyTo(geoCoordinates: GeoCoordinates) {
@@ -87,7 +96,7 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
 
     // Rotate the map by x degrees. Tip: Try to see what happens for negative values.
     private fun rotateMap(bearingStepInDegrees: Int) {
-        val currentBearing: Double = camera.getState().orientationAtTarget.bearing
+        val currentBearing: Double = camera.state.orientationAtTarget.bearing
         val newBearing = currentBearing + bearingStepInDegrees
 
         //By default, bearing will be clamped to the range (0, 360].
@@ -97,7 +106,7 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
 
     // Tilt the map by x degrees.
     private fun tiltMap(tiltStepInDegrees: Int) {
-        val currentTilt: Double = camera.getState().orientationAtTarget.tilt
+        val currentTilt: Double = camera.state.orientationAtTarget.tilt
         val newTilt = currentTilt + tiltStepInDegrees
 
         //By default, tilt will be clamped to the range [0, 70].
@@ -106,8 +115,7 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
     }
 
     private fun setTapGestureHandler(mapView: MapView) {
-        mapView.gestures.tapListener =
-            TapListener { mapViewTouchPointInPixels: Point2D -> this.setTransformCenter(mapViewTouchPointInPixels) }
+        mapView.gestures.tapListener = TapListener { mapViewTouchPointInPixels: Point2D -> this.setTransformCenter(mapViewTouchPointInPixels) }
     }
 
     // The new transform center will be used for all programmatical map transformations
@@ -116,13 +124,12 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
     // Note: Gestures are not affected, for example, the pinch-rotate gesture and
     // the two-finger-pan (=> tilt) will work like before.
     private fun setTransformCenter(mapViewTouchPointInPixels: Point2D) {
-        // Note that this moves the current camera's target at the locatiion where you tapped the screen.
+        // Note that this moves the current camera's target at the location where you tapped the screen.
         // Effectively, you move the map by changing the camera's target.
-        camera.setPrincipalPoint(mapViewTouchPointInPixels)
+        camera.principalPoint = mapViewTouchPointInPixels
 
         // Reposition circle view on screen to indicate the new target.
-        cameraTargetView!!.x = mapViewTouchPointInPixels.x.toFloat() - cameraTargetView!!.width / 2
-        cameraTargetView!!.y = mapViewTouchPointInPixels.y.toFloat() - cameraTargetView!!.height / 2
+        moveCameraTargetToScreenPoint(mapViewTouchPointInPixels)
 
         Toast.makeText(
             context, "New transform center: " +
@@ -148,6 +155,43 @@ class CameraExample(private val context: Context, private val mapView: MapView) 
         val mapPolygon = MapPolygon(geoPolygon, fillColor)
 
         return mapPolygon
+    }
+
+    // Center cameraTargetView on a given screen pixel position.
+    private fun moveCameraTargetToScreenPoint(screenPoint: Point2D) {
+        val apply = {
+            val halfWidthPx = cameraTargetView.width / 2f
+            val halfHeightPx = cameraTargetView.height / 2f
+            cameraTargetView.x = screenPoint.x.toFloat() - halfWidthPx
+            cameraTargetView.y = screenPoint.y.toFloat() - halfHeightPx
+        }
+        // If the cameraTargetView hasn’t been measured yet, defer to next frame.
+        // For example, on the first tap, just after AndroidView() is created—before the first layout pass.
+        if (cameraTargetView.width == 0 || cameraTargetView.height == 0) {
+            cameraTargetView.post(apply)
+        } else {
+            apply()
+        }
+    }
+
+    // Project the GeoCoordinates to screen pixels (if visible) and center cameraTargetView there.
+    private fun moveCameraTargetViewToGeoCoordinates(geoCoordinates: GeoCoordinates) {
+        val point2D: Point2D = mapView.geoToViewCoordinates(geoCoordinates) ?: return
+        moveCameraTargetToScreenPoint(point2D)
+    }
+
+    // Move cameraTargetView at the camera's current target projection;
+    // if that projection is unavailable, fall back to the MapView center.
+    private fun centerCameraTargetViewOnCurrentTarget() {
+        // Prefer the actual camera target projection
+        val cameraTargetGeoCoordinates = camera.state.targetCoordinates
+        val cameraTargetScreenPoint = mapView.geoToViewCoordinates(cameraTargetGeoCoordinates)
+        if (cameraTargetScreenPoint != null) {
+            moveCameraTargetToScreenPoint(cameraTargetScreenPoint)
+        } else {
+            // Fallback to mapView center.
+            moveCameraTargetToScreenPoint(Point2D(mapView.width / 2.0, mapView.height / 2.0))
+        }
     }
 
     private fun getRandomGeoCoordinates(): GeoCoordinates {

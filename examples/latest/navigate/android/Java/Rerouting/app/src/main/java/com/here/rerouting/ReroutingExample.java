@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ import com.here.sdk.navigation.RouteDeviationListener;
 import com.here.sdk.navigation.RouteProgress;
 import com.here.sdk.navigation.RouteProgressListener;
 import com.here.sdk.navigation.VisualNavigator;
-import com.here.sdk.routing.CarOptions;
+import com.here.sdk.routing.RoutingOptions;
 import com.here.sdk.routing.LocalizedRoadNumber;
 import com.here.sdk.routing.Maneuver;
 import com.here.sdk.routing.ManeuverAction;
@@ -425,18 +425,27 @@ public class ReroutingExample {
     }
 
     // Determines the road type for a given maneuver based on street attributes.
-    // Return The road type classification (HIGHWAY, URBAN, RURAL, or UNDEFINED).
+    // Returns the road type classification (HIGHWAY, URBAN or RURAL).
     private RoadType getRoadType(Maneuver maneuver, Route route) {
         Section sectionOfManeuver = route.getSections().get(maneuver.getSectionIndex());
         List<Span> spansInSection = sectionOfManeuver.getSpans();
 
         // If attributes list is empty then the road type is rural.
-        if(spansInSection.isEmpty()) {
+        if (spansInSection.isEmpty()) {
             return RoadType.RURAL;
         }
 
-        Span currentSpan = spansInSection.get(maneuver.getSpanIndex());
-        List<StreetAttributes> streetAttributes = currentSpan.getStreetAttributes();
+        Span maneuverSpan;
+
+        // Arrive maneuvers are placed after the last span of the route
+        // and the span index for them would be greater than the span's list size.
+        if (maneuver.getAction() == ManeuverAction.ARRIVE) {
+            maneuverSpan = spansInSection.get(spansInSection.size() - 1);
+        } else {
+            maneuverSpan = spansInSection.get(maneuver.getSpanIndex());
+        }
+
+        List<StreetAttributes> streetAttributes = maneuverSpan.getStreetAttributes();
 
         // If attributes list contains either CONTROLLED_ACCESS_HIGHWAY, or MOTORWAY or RAMP then the road type is highway.
         // Check for highway attributes (highest priority)
@@ -638,10 +647,10 @@ public class ReroutingExample {
 
     private void calculateRouteForUseWithVisualNavigator() {
         boolean insertDeviationWaypoints = false;
-        CarOptions carOptions = new CarOptions();
+        RoutingOptions routingOptions = new RoutingOptions();
         // A route handle is neccessary for rerouting.
-        carOptions.routeOptions.enableRouteHandle = true;
-        routingEngine.calculateRoute(getCurrentWaypoints(insertDeviationWaypoints), carOptions, (routingError, routes) -> {
+        routingOptions.routeOptions.enableRouteHandle = true;
+        routingEngine.calculateRoute(getCurrentWaypoints(insertDeviationWaypoints), routingOptions, (routingError, routes) -> {
             handleRouteResults(routingError, routes);
         });
     }
@@ -654,7 +663,7 @@ public class ReroutingExample {
 
         // Use deviationWaypoints to create a second route and set it as source for LocationSimulator.
         boolean insertDeviationWaypoints = true;
-        routingEngine.calculateRoute(getCurrentWaypoints(insertDeviationWaypoints), new CarOptions(), (routingError, routes) -> {
+        routingEngine.calculateRoute(getCurrentWaypoints(insertDeviationWaypoints), new RoutingOptions(), (routingError, routes) -> {
             handleDeviationRouteResults(routingError, routes);
         });
     }
@@ -811,5 +820,11 @@ public class ReroutingExample {
         builder.setTitle(title);
         builder.setMessage(message);
         builder.show();
+    }
+
+    // Dispose the RoutingEngine instance to cancel any pending requests
+    // and shut it down for proper resource cleanup.
+    public void dispose() {
+        routingEngine.dispose();
     }
 }

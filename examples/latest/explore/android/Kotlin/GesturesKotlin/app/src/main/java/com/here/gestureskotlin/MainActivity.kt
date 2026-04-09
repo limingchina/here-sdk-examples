@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 HERE Europe B.V.
+ * Copyright (C) 2025-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,19 +32,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.here.gestureskotlin.ui.theme.GesturesTheme
-import com.here.sdk.core.engine.AuthenticationMode
-import com.here.sdk.core.engine.SDKNativeEngine
-import com.here.sdk.core.engine.SDKOptions
+import com.here.sdk.core.engine.*
 import com.here.sdk.core.errors.InstantiationErrorException
 import com.here.sdk.mapview.MapScheme
 import com.here.sdk.mapview.MapView
 import com.here.sdk.units.core.utils.EnvironmentLogger
+import com.here.sdk.units.core.utils.PermissionsRequestor
 
 class MainActivity : ComponentActivity() {
 
 
     private val environmentLogger = EnvironmentLogger()
-    private var permissionsRequestor: PermissionsRequestor? = null
+    private lateinit var permissionsRequestor: PermissionsRequestor
     private var mapView: MapView? = null
     private var GesturesExample: GesturesExample? = null
 
@@ -109,17 +108,16 @@ class MainActivity : ComponentActivity() {
 
     // Convenience method to check all permissions that have been added to the AndroidManifest.
     private fun handleAndroidPermissions() {
-        permissionsRequestor?.requestPermissionsFromManifest(
-            object : PermissionsRequestor.ResultListener {
-                override fun permissionsGranted() {
-                    loadMapScene()
-                }
-
-                override fun permissionsDenied(deniedPermissions: List<String>) {
-                    Log.e(TAG, "Permissions denied by the user.")
-                }
+        permissionsRequestor.request(object :
+            PermissionsRequestor.ResultListener {
+            override fun permissionsGranted() {
+                loadMapScene()
             }
-        )
+
+            override fun permissionsDenied() {
+                Log.e(TAG, "Permissions denied by user.")
+            }
+        })
     }
 
     private fun loadMapScene() {

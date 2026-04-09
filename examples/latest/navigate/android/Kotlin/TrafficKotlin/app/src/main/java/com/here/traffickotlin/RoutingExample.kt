@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,6 @@ import com.here.sdk.core.Point2D
 import com.here.sdk.core.errors.InstantiationErrorException
 import com.here.sdk.mapview.LineCap
 import com.here.sdk.mapview.MapCamera
-import com.here.sdk.mapview.MapImage
-import com.here.sdk.mapview.MapImageFactory
-import com.here.sdk.mapview.MapMarker
 import com.here.sdk.mapview.MapMeasure
 import com.here.sdk.mapview.MapMeasureDependentRenderSize
 import com.here.sdk.mapview.MapPolyline
@@ -39,13 +36,10 @@ import com.here.sdk.mapview.MapPolyline.SolidRepresentation
 import com.here.sdk.mapview.MapView
 import com.here.sdk.mapview.RenderSize
 import com.here.sdk.routing.CalculateRouteCallback
-import com.here.sdk.routing.CarOptions
-import com.here.sdk.routing.DynamicSpeedInfo
+import com.here.sdk.routing.RoutingOptions
 import com.here.sdk.routing.Route
 import com.here.sdk.routing.RoutingEngine
 import com.here.sdk.routing.RoutingError
-import com.here.sdk.routing.SectionNotice
-import com.here.sdk.routing.TrafficOptimizationMode
 import com.here.sdk.routing.Waypoint
 import com.here.sdk.traffic.TrafficEngine
 import com.here.sdk.traffic.TrafficFlowQueryOptions
@@ -58,8 +52,8 @@ import com.here.sdk.traffic.TrafficFlowQueryOptions
 // the traffic information of the route object based on the ETA and historical traffic patterns.
 class RoutingExample(private val context: Context, private val mapView: MapView) {
     private val mapPolylines = arrayListOf<MapPolyline>()
-    private var routingEngine: RoutingEngine? = null
-    private var trafficEngine: TrafficEngine? = null
+    private var routingEngine: RoutingEngine
+    private var trafficEngine: TrafficEngine
     private var waypoints = arrayListOf<Waypoint>()
     init {
         val camera: MapCamera = mapView.camera
@@ -93,9 +87,9 @@ class RoutingExample(private val context: Context, private val mapView: MapView)
     }
 
     private fun calculateRoute(waypoints: List<Waypoint>) {
-        routingEngine?.calculateRoute(
+        routingEngine.calculateRoute(
             waypoints,
-            CarOptions(),
+            RoutingOptions(),
             object : CalculateRouteCallback {
                 override fun onRouteCalculated(routingError: RoutingError?, routes: List<Route>?) {
                     if (routingError == null) {
@@ -138,11 +132,11 @@ class RoutingExample(private val context: Context, private val mapView: MapView)
         }
 
         if (routeMapPolyline != null) {
-            mapView.getMapScene().addMapPolyline(routeMapPolyline)
+            mapView.mapScene.addMapPolyline(routeMapPolyline)
             mapPolylines.add(routeMapPolyline)
         }
 
-        if (route.getLengthInMeters() / 1000 > 5000) {
+        if (route.lengthInMeters / 1000 > 5000) {
             showDialog("Note", "Skipped showing traffic-on-route for longer routes.");
             return;
         }
@@ -168,7 +162,7 @@ class RoutingExample(private val context: Context, private val mapView: MapView)
 
         val geoCorridor = GeoCorridor(route.geometry.vertices, halfWidthInMeters)
         val trafficFlowQueryOptions = TrafficFlowQueryOptions()
-        trafficEngine!!.queryForFlow(
+        trafficEngine.queryForFlow(
             geoCorridor, trafficFlowQueryOptions
         ) { trafficQueryError, list ->
             if (trafficQueryError == null) {
@@ -263,6 +257,12 @@ class RoutingExample(private val context: Context, private val mapView: MapView)
         builder.setTitle(title)
         builder.setMessage(message)
         builder.show()
+    }
+
+    // Dispose the RoutingEngine instance to cancel any pending requests
+    // and shut it down for proper resource cleanup.
+    fun dispose() {
+        routingEngine.dispose()
     }
 
     companion object {

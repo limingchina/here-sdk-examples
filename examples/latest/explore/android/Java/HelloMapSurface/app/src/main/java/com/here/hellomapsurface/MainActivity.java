@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023-2025 HERE Europe B.V.
+ * Copyright (C) 2023-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -311,7 +311,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
-        mapSurface.setSurface(getApplicationContext(),
+        mapSurface.attachSurface(getApplicationContext(),
                 holder.getSurface(), holder.getSurfaceFrame().width(), holder.getSurfaceFrame().height(),
                 new RenderListener());
         hasSurface = true;
@@ -320,7 +320,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-        mapSurface.setSurface(getApplicationContext(), holder.getSurface(), width, height, new RenderListener());
+        mapSurface.attachSurface(getApplicationContext(), holder.getSurface(), width, height, new RenderListener());
         hasSurface = true;
     }
 

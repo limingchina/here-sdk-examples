@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,7 +86,7 @@ public class MapSwitcherBottomSheet extends BottomSheetDialogFragment {
         menuItem4.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                loadMapScene(MapScheme.TOPO_DAY);
+                loadMapScene(MapScheme.NORMAL_NIGHT);
                 dismiss();
             }
         });

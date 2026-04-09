@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License")
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import 'package:here_sdk/core.threading.dart';
 import 'package:here_sdk/mapview.dart';
 import 'package:here_sdk/routing.dart';
 import 'package:here_sdk/routing.dart' as here;
+import 'package:here_sdk/transport.dart';
 import 'package:intl/intl.dart';
 import 'package:routing_app/time_utils.dart';
 
@@ -45,6 +46,8 @@ class RoutingExample {
   here.Route? _currentRoute;
   final offroadDistanceThresholdMeters = 500.0;
   TaskHandle? _currentRouteCalculationTask;
+  GeoCoordinates? _startGeoCoordinates;
+  GeoCoordinates? _destinationGeoCoordinates;
 
   RoutingExample(ShowDialogFunction showDialogCallback, HereMapController hereMapController)
     : _showDialog = showDialogCallback,
@@ -69,15 +72,15 @@ class RoutingExample {
     // Optionally, clear any previous route.
     clearMap();
 
-    var startGeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var destinationGeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var startWaypoint = Waypoint.withDefaults(startGeoCoordinates);
-    var destinationWaypoint = Waypoint.withDefaults(destinationGeoCoordinates);
+    _startGeoCoordinates = _createRandomGeoCoordinatesAroundMapCenter();
+    _destinationGeoCoordinates = _createRandomGeoCoordinatesAroundMapCenter();
+    var startWaypoint = Waypoint.withDefaults(_startGeoCoordinates!);
+    var destinationWaypoint = Waypoint.withDefaults(_destinationGeoCoordinates!);
 
     waypoints = [startWaypoint, destinationWaypoint];
 
-    _addMapMarker(startGeoCoordinates, "assets/poi_start.png");
-    _addMapMarker(destinationGeoCoordinates, "assets/poi_destination.png");
+    _addMapMarker(_startGeoCoordinates!, "assets/poi_start.png");
+    _addMapMarker(_destinationGeoCoordinates!, "assets/poi_destination.png");
 
     _calculateRoute(waypoints);
   }
@@ -140,15 +143,19 @@ class RoutingExample {
   }
 
   void _calculateRoute(List<Waypoint> waypoints) {
-    CarOptions carOptions = CarOptions();
-    carOptions.routeOptions.enableTolls = true;
+    RoutingOptions routingOptions = RoutingOptions();
+    routingOptions.routeOptions.enableTolls = true;
     // This is needed when e.g. requesting TrafficOnRoute data.
-    carOptions.routeOptions.enableRouteHandle = true;
+    routingOptions.routeOptions.enableRouteHandle = true;
 
     // Enable usage of HOV and HOT lanes.
     // Note: These lanes will only be used if they are available in the selected country.
-    carOptions.allowOptions.allowHov = true;
-    carOptions.allowOptions.allowHot = true;
+    routingOptions.allowOptions.allowHov = true;
+    routingOptions.allowOptions.allowHot = true;
+
+    // Set vehicle-specific options via VehicleSpecification.
+    // By default, the transport mode is already set to CAR.
+    VehicleSpecification vehicleSpecification = VehicleSpecification();
 
     // In some cities (e.g., Bogotá, Mexico City, Jakarta), the last digit of the
     // license plate is used intentionally to control traffic in low-emission zones.
@@ -157,21 +164,20 @@ class RoutingExample {
     // for example, on certain week days.
     // Make sure to update this value to the actual last character of your license
     // attached to your vehicle!
-    carOptions.lastCharacterOfLicensePlate = "7";
+    vehicleSpecification.lastCharacterOfLicensePlate = "7";
 
-    // When occupantsNumber is greater than 1, it enables the vehicle to use HOV/HOT lanes.
-    carOptions.occupantsNumber = 4;
+    // When occupancy is greater than 1, it enables the vehicle to use HOV/HOT lanes.
+    vehicleSpecification.occupancy = 4;
+
+    routingOptions.transportSpecification.vehicleSpecification = vehicleSpecification;
 
     // Disabled - Traffic optimization is completely disabled, including long-term road closures. It helps in producing stable routes.
     // Time dependent - Traffic optimization is enabled, the shape of the route will be adjusted according to the traffic situation which depends on departure time and arrival time.
-    carOptions.routeOptions.trafficOptimizationMode = _trafficOptimization
+    routingOptions.routeOptions.trafficOptimizationMode = _trafficOptimization
         ? TrafficOptimizationMode.timeDependent
         : TrafficOptimizationMode.disabled;
 
-    // Specifies whether route labels should be included in the route response.
-    carOptions.routeOptions.enableRouteLabels = true;
-
-    _currentRouteCalculationTask = _routingEngine.calculateCarRoute(waypoints, carOptions, (
+    _currentRouteCalculationTask = _routingEngine.calculateRouteWithRoutingOptions(waypoints, routingOptions, (
       RoutingError? routingError,
       List<here.Route>? routeList,
     ) async {
@@ -185,7 +191,6 @@ class RoutingExample {
         _logRouteSectionDetails(route);
         _logRouteViolations(route);
         _logTollDetails(route);
-        _logRouteLabels(route);
         _animateToRoute(route);
       } else {
         var error = routingError.toString();
@@ -247,22 +252,6 @@ class RoutingExample {
     }
   }
 
-  void _logRouteLabels(here.Route route) {
-    // Get the list of the street names or route numbers through which the route is going to pass.
-    // Make sure to enable this feature via routeOptions.enableRouteLabels (see below).
-    List<RouteLabel> routeLabels = route.routeLabels;
-
-    if (routeLabels.isEmpty) {
-      print("No route labels found for this route.");
-    }
-
-    for (RouteLabel routeLabel in routeLabels) {
-      LocalizedText name = routeLabel.name;
-      RouteLabelType routeLabelType = routeLabel.type;
-      print("Route label: ${name.text}, type: $routeLabelType");
-    }
-  }
-
   void clearMap() {
     _clearWaypointMapMarker();
     _clearRoute();
@@ -318,21 +307,27 @@ class RoutingExample {
     // Optionally, clear any previous route.
     clearMap();
 
-    var startGeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var destinationGeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var waypoint1GeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var waypoint2GeoCoordinates = _createRandomGeoCoordinatesInViewport();
-    var startWaypoint = Waypoint.withDefaults(startGeoCoordinates);
+    if (_startGeoCoordinates == null || _destinationGeoCoordinates == null) {
+      _showDialog("Error", "Please add a route first.");
+      return;
+    }
+
+    var waypoint1GeoCoordinates = _createRandomGeoCoordinatesAroundMapCenter();
+    var waypoint2GeoCoordinates = _createRandomGeoCoordinatesAroundMapCenter();
+
     var waypoint1 = Waypoint.withDefaults(waypoint1GeoCoordinates);
     var waypoint2 = Waypoint.withDefaults(waypoint2GeoCoordinates);
-    var destinationWaypoint = Waypoint.withDefaults(destinationGeoCoordinates);
+    waypoints = [
+      Waypoint.withDefaults(_startGeoCoordinates!),
+      waypoint1,
+      waypoint2,
+      Waypoint.withDefaults(_destinationGeoCoordinates!),
+    ];
 
-    waypoints = [startWaypoint, waypoint1, waypoint2, destinationWaypoint];
-
-    _addMapMarker(startGeoCoordinates, "assets/poi_start.png");
+    _addMapMarker(_startGeoCoordinates!, "assets/poi_start.png");
     _addMapMarker(waypoint1GeoCoordinates, "assets/waypoint_one.png");
     _addMapMarker(waypoint2GeoCoordinates, "assets/waypoint_two.png");
-    _addMapMarker(destinationGeoCoordinates, "assets/poi_destination.png");
+    _addMapMarker(_destinationGeoCoordinates!, "assets/poi_destination.png");
 
     _calculateRoute(waypoints);
   }
@@ -495,26 +490,25 @@ class RoutingExample {
     return const Color.fromARGB(160, 0, 0, 0); // Black
   }
 
-  GeoCoordinates _createRandomGeoCoordinatesInViewport() {
-    GeoBox? geoBox = _hereMapController.camera.boundingBox;
-    if (geoBox == null) {
-      // Happens only when map is not fully covering the viewport as the map is tilted.
-      print("The map view is tilted, falling back to fixed destination coordinate.");
-      return GeoCoordinates(52.520798, 13.409408);
+  GeoCoordinates _createRandomGeoCoordinatesAroundMapCenter() {
+    GeoCoordinates? centerGeoCoordinates = _hereMapController.viewToGeoCoordinates(
+      Point2D(_hereMapController.viewportSize.width / 2, _hereMapController.viewportSize.height / 2),
+    );
+
+    if (centerGeoCoordinates == null) {
+      // View points cannot be converted to geographic coordinates on the horizon. 
+      // Should never happen for center coordinates as the horizon is
+      // farther away than _hereMapController.viewportSize.height / 2.
+      throw Exception("CenterGeoCoordinates are null");
     }
 
-    GeoCoordinates northEast = geoBox.northEastCorner;
-    GeoCoordinates southWest = geoBox.southWestCorner;
+    double lat = centerGeoCoordinates.latitude;
+    double lon = centerGeoCoordinates.longitude;
 
-    double minLat = southWest.latitude;
-    double maxLat = northEast.latitude;
-    double lat = _getRandom(minLat, maxLat);
-
-    double minLon = southWest.longitude;
-    double maxLon = northEast.longitude;
-    double lon = _getRandom(minLon, maxLon);
-
-    return GeoCoordinates(lat, lon);
+    return GeoCoordinates(
+      _getRandom(lat - 0.02, lat + 0.02),
+      _getRandom(lon - 0.02, lon + 0.02),
+    );
   }
 
   double _getRandom(double min, double max) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,22 @@ import AVFoundation
 import heresdk
 import SwiftUI
 
+enum RoadType {
+    case highway
+    case rural
+    case urban
+}
+
 // This class combines the various events that can be emitted during turn-by-turn navigation.
-// Note that this class does not show an exhaustive list of all possible events.
+// Note that this class does not show an exhaustive list of all possible events that can be used for turn-by-turn navigation.
+// More evnets are shown in the "NavigationWarners" app.
 class NavigationHandler : NavigableLocationDelegate,
                                RouteProgressDelegate,
                                EventTextDelegate {
 
     private let visualNavigator: VisualNavigator
     private let dynamicRoutingEngine: DynamicRoutingEngine
+    private let electronicHorizonHandler: ElectronicHorizonHandler
     private let voiceAssistant: VoiceAssistant
     private var lastMapMatchedLocation: MapMatchedLocation?
     private var previousManeuverIndex: Int32 = -1
@@ -39,9 +47,11 @@ class NavigationHandler : NavigableLocationDelegate,
 
     init(_ visualNavigator: VisualNavigator,
          _ dynamicRoutingEngine: DynamicRoutingEngine,
+         _ electronicHorizonHandler: ElectronicHorizonHandler,
          _ routeCalculator: RouteCalculator) {
         self.visualNavigator = visualNavigator
         self.dynamicRoutingEngine = dynamicRoutingEngine
+        self.electronicHorizonHandler = electronicHorizonHandler
         self.routeCalculator = routeCalculator
 
         // A helper class for TTS.
@@ -77,9 +87,25 @@ class NavigationHandler : NavigableLocationDelegate,
         }
 
         let action = nextManeuver.action
-        let roadName = getRoadName(maneuver: nextManeuver)
-        let logMessage = "'\(String(describing: action))' on \(roadName) in \(nextManeuverProgress.remainingDistanceInMeters) meters."
+        let logMessage = "Next maneuver action: '\(String(describing: action))' in \(nextManeuverProgress.remainingDistanceInMeters) meters."
         var currentETAString = getETA(routeProgress: routeProgress)
+
+        // Angle is nil for some maneuvers like Depart, Arrive and Roundabout.
+        if let turnAngle = nextManeuver.turnAngleInDegrees {
+            if turnAngle > 10 {
+                print("At the next maneuver: Make a right turn of \(turnAngle) degrees.")
+            } else if turnAngle < -10 {
+                print("At the next maneuver: Make a left turn of \(turnAngle) degrees.")
+            } else {
+                print("At the next maneuver: Go straight.")
+            }
+        }
+
+        // Angle is nil when the roundabout maneuver is not an enter, exit or keep maneuver.
+        if let roundaboutAngle = nextManeuver.roundaboutAngleInDegrees {
+            // Note that the value is negative only for left-driving countries such as UK.
+            print("At the next maneuver: Follow the roundabout for \(roundaboutAngle) degrees to reach the exit.")
+        }
         
         if previousManeuverIndex != nextManeuverIndex {
             currentETAString += "\nNew maneuver: \(logMessage)"
@@ -96,7 +122,10 @@ class NavigationHandler : NavigableLocationDelegate,
             // We periodically want to search for better traffic-optimized routes.
             dynamicRoutingEngine.updateCurrentLocation(
                 mapMatchedLocation: lastMapMatchedLocation,
-                sectionIndex: routeProgress.sectionIndex)
+                sectionIndex: routeProgress.routeMatchedLocation.sectionIndex)
+            
+            // Update the ElectronicHorizon with the last map-matched location.
+            electronicHorizonHandler.update(mapMatchedLocation: lastMapMatchedLocation)
         }
 
         updateTrafficOnRoute(routeProgress: routeProgress)
@@ -133,7 +162,7 @@ class NavigationHandler : NavigableLocationDelegate,
         }
         let traveledDistanceOnLastSectionInMeters =
         currentRoute.lengthInMeters - lastSectionProgress.remainingDistanceInMeters
-        let lastTraveledSectionIndex = routeProgress.sectionIndex
+        let lastTraveledSectionIndex = routeProgress.routeMatchedLocation.sectionIndex
 
         routeCalculator.calculateTrafficOnRoute(
             currentRoute: currentRoute,
@@ -151,33 +180,6 @@ class NavigationHandler : NavigableLocationDelegate,
         }
     }
 
-
-    func getRoadName(maneuver: Maneuver) -> String {
-        let currentRoadTexts = maneuver.roadTexts
-        let nextRoadTexts = maneuver.nextRoadTexts
-
-        let currentRoadName = currentRoadTexts.names.defaultValue()
-        let currentRoadNumber = currentRoadTexts.numbersWithDirection.defaultValue()
-        let nextRoadName = nextRoadTexts.names.defaultValue()
-        let nextRoadNumber = nextRoadTexts.numbersWithDirection.defaultValue()
-
-        var roadName = nextRoadName == nil ? nextRoadNumber : nextRoadName
-
-        // On highways, we want to show the highway number instead of a possible road name,
-        // while for inner city and urban areas road names are preferred over road numbers.
-        if maneuver.nextRoadType == RoadType.highway {
-            roadName = nextRoadNumber == nil ? nextRoadName : nextRoadNumber
-        }
-
-        if maneuver.action == ManeuverAction.arrive {
-            // We are approaching destination, so there's no next road.
-            roadName = currentRoadName == nil ? currentRoadNumber : currentRoadName
-        }
-
-        // Nil happens only in rare cases, when also the fallback above is nil.
-        return roadName ?? "unnamed road"
-    }
-
     // Conform to NavigableLocationDelegate.
     // Notifies on the current map-matched location and other useful information while driving or walking.
     func onNavigableLocationUpdated(_ navigableLocation: NavigableLocation) {
@@ -187,6 +189,9 @@ class NavigationHandler : NavigableLocationDelegate,
         }
 
         lastMapMatchedLocation = navigableLocation.mapMatchedLocation!
+        let latitude = lastMapMatchedLocation!.coordinates.latitude
+        let longitude = lastMapMatchedLocation!.coordinates.longitude
+        print("MapMatchedLocation - Lat: \(latitude), Lon: \(longitude)")
 
         if (lastMapMatchedLocation?.isDrivingInTheWrongWay == true) {
             // For two-way streets, this value is always false. This feature is supported in tracking mode and when deviating from a route.
@@ -234,13 +239,12 @@ class NavigationHandler : NavigableLocationDelegate,
         maneuverNotificationOptions.language = ttsLanguageCode
         // Set the measurement system used for distances.
         maneuverNotificationOptions.unitSystem = UnitSystem.metric
-        visualNavigator.maneuverNotificationOptions = maneuverNotificationOptions
-
-        print("LanguageCode for maneuver notifications: \(ttsLanguageCode).")
-
         // Toggle the lane recommendation in the maneuver notifications.
         // The lane recommendation, if enabled, will be given only for the ManeuverNotificationType.DISTANCE notification type.
         maneuverNotificationOptions.enableLaneRecommendation = true
+        visualNavigator.maneuverNotificationOptions = maneuverNotificationOptions
+
+        print("LanguageCode for maneuver notifications: \(ttsLanguageCode).")
         
         // Set language to our TextToSpeech engine.
         let locale = LanguageCodeConverter.getLocale(languageCode: ttsLanguageCode)

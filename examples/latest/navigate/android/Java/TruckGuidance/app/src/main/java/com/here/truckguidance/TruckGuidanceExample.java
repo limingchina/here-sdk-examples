@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,10 +97,13 @@ import com.here.sdk.search.SearchOptions;
 import com.here.sdk.search.TruckAmenities;
 import com.here.sdk.transport.HazardousMaterial;
 import com.here.sdk.transport.TransportMode;
+import com.here.sdk.transport.TransportSpecification;
+import com.here.sdk.transport.TruckCategory;
 import com.here.sdk.transport.TruckSpecifications;
 import com.here.sdk.transport.TruckType;
 import com.here.sdk.transport.TunnelCategory;
 import com.here.sdk.transport.VehicleProfile;
+import com.here.sdk.transport.VehicleSpecification;
 import com.here.sdk.transport.VehicleType;
 import com.here.time.Duration;
 
@@ -219,6 +222,7 @@ public class TruckGuidanceExample {
         static final Integer axleCount = null;
         static final Integer trailerCount = null;
         static final TruckType truckType = TruckType.STRAIGHT;
+        static final TruckCategory truckCategory = TruckCategory.STRAIGHT;
     }
 
     // Used during tracking mode.
@@ -229,7 +233,7 @@ public class TruckGuidanceExample {
         // The total length including all trailers (if any).
         vehicleProfile.lengthInCentimeters = MyTruckSpecs.lengthInCentimeters;
         vehicleProfile.widthInCentimeters = MyTruckSpecs.widthInCentimeters;
-        vehicleProfile.truckType = MyTruckSpecs.truckType;
+        vehicleProfile.truckCategory = MyTruckSpecs.truckCategory;
         vehicleProfile.trailerCount = MyTruckSpecs.trailerCount == null ? 0 : MyTruckSpecs.trailerCount;
         vehicleProfile.axleCount = MyTruckSpecs.axleCount;
         vehicleProfile.weightPerAxleInKilograms = MyTruckSpecs.weightPerAxleInKilograms;
@@ -257,7 +261,7 @@ public class TruckGuidanceExample {
     // Configure the displayed vehicle restrictions.
     // Only the specified types will be shown. For example, when TRUCK is set, then only
     // icons applicable for trucks are displayed. 
-    // TunnelCategory belongs to the HazardousMaterial.
+    // TunnelCategory are closely related to the HazardousMaterial.
     // Tunnels are categorized from B (low risk, few restrictions) to E (high risk)
     // based on their safety features and the potential danger posed by the goods
     // transported through them.
@@ -265,12 +269,35 @@ public class TruckGuidanceExample {
         List<HazardousMaterial> hazardousMaterials = new ArrayList<>();
         hazardousMaterials.add(HazardousMaterial.EXPLOSIVE);
         hazardousMaterials.add(HazardousMaterial.FLAMMABLE);
-        
-        MapContentSettings.configureVehicleRestrictionFilter(
-                TransportMode.TRUCK,
-                createTruckSpecifications(),
-                hazardousMaterials,
-                TunnelCategory.B);
+
+        TruckSpecifications truckSpecifications = createTruckSpecifications();
+
+        VehicleSpecification.TruckBuilder truckBuilder = new VehicleSpecification.TruckBuilder()
+                .withGrossWeightInKilograms(truckSpecifications.grossWeightInKilograms)
+                .withHeightInCentimeters(truckSpecifications.heightInCentimeters)
+                .withWidthInCentimeters(truckSpecifications.widthInCentimeters)
+                .withLengthInCentimeters(truckSpecifications.lengthInCentimeters)
+                .withTruckCategory(MyTruckSpecs.truckCategory)
+                .withTunnelCategory(TunnelCategory.B)
+                .withHazardousMaterials(hazardousMaterials);
+
+        if (truckSpecifications.weightPerAxleInKilograms != null) {
+            truckBuilder.withWeightPerAxleInKilograms(truckSpecifications.weightPerAxleInKilograms);
+        }
+        if (truckSpecifications.axleCount != null) {
+            truckBuilder.withAxleCount(truckSpecifications.axleCount);
+        }
+        if (truckSpecifications.trailerCount != null) {
+            truckBuilder.withTrailerCount(truckSpecifications.trailerCount);
+        }
+
+        VehicleSpecification vehicleSpecification = truckBuilder.build();
+
+        TransportSpecification transportSpecification = new TransportSpecification.TruckBuilder()
+                .withVehicleSpecification(vehicleSpecification)
+                .build();
+
+        MapContentSettings.configureVehicleRestrictionFilter(transportSpecification);
     }
 
     public void setUICallback(MainActivity.UICallback callback) {
@@ -846,9 +873,9 @@ public class TruckGuidanceExample {
                         Log.d("ViolatedRestriction", "Section " + sectionNr + ": " +
                                 "Exceeded maxTunnelCategory: " + details.maxTunnelCategory.name());
                     }
-                    if (details.forbiddenTruckType != null) {
+                    if (details.forbiddenTruckCategory != null) {
                         Log.d("ViolatedRestriction", "Section " + sectionNr + ": " +
-                                "ForbiddenTruckType is required: " + details.forbiddenTruckType.name());
+                                "ForbiddenTruckType is required: " + details.forbiddenTruckCategory.name());
                     }
                     if (details.timeRule != null) {
                         Log.d("ViolatedRestriction", "Section " + sectionNr + ": " +
@@ -1034,5 +1061,11 @@ public class TruckGuidanceExample {
         builder.setTitle(title);
         builder.setMessage(message);
         builder.show();
+    }
+
+    // Dispose the RoutingEngine instance to cancel any pending requests
+    // and shut it down for proper resource cleanup.
+    public void dispose() {
+        routingEngine.dispose();
     }
 }

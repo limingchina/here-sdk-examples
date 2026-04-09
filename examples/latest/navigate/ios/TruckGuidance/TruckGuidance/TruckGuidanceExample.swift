@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2025 HERE Europe B.V.
+ * Copyright (C) 2019-2026 HERE Europe B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -161,6 +161,7 @@ class TruckGuidanceExample: TapDelegate,
         static let axleCount: Int32? = nil
         static let trailerCount: Int32? = nil
         static let truckType: TruckType = .straight
+        static let truckCategory: TruckCategory = .straight
     }
 
     // Used during tracking mode.
@@ -171,7 +172,7 @@ class TruckGuidanceExample: TapDelegate,
         // The total length including all trailers (if any).
         vehicleProfile.lengthInCentimeters = MyTruckSpecs.lengthInCentimeters
         vehicleProfile.widthInCentimeters = MyTruckSpecs.widthInCentimeters
-        vehicleProfile.truckType = MyTruckSpecs.truckType
+        vehicleProfile.truckCategory = MyTruckSpecs.truckCategory
         vehicleProfile.trailerCount = MyTruckSpecs.trailerCount ?? 0
         vehicleProfile.axleCount = MyTruckSpecs.axleCount
         vehicleProfile.weightPerAxleInKilograms = MyTruckSpecs.weightPerAxleInKilograms
@@ -199,20 +200,43 @@ class TruckGuidanceExample: TapDelegate,
     // Configure the displayed vehicle restrictions.
     // Only the specified types will be shown. For example, when truck is set, then only
     // icons applicable for trucks are displayed.
-    // TunnelCategory belongs to the HazardousMaterial.
+    // TunnelCategory are closely related to the HazardousMaterial.
     // Tunnels are categorized from b (low risk, few restrictions) to e (high risk)
     // based on their safety features and the potential danger posed by the goods
     // transported through them.
     private func configureVehicleRestrictionFilter() {
         var hazardousMaterials: [HazardousMaterial] = []
-        hazardousMaterials.append(HazardousMaterial.explosive)
-        hazardousMaterials.append(HazardousMaterial.flammable)
-        
-        MapContentSettings.configureVehicleRestrictionFilter(
-            transportMode: TransportMode.truck,
-            truckSpecifications: createTruckSpecifications(),
-            hazardousMaterials: hazardousMaterials,
-            tunnelCategory: TunnelCategory.b)
+        hazardousMaterials.append(.explosive)
+        hazardousMaterials.append(.flammable)
+
+        let truckSpecifications = createTruckSpecifications()
+        let truckBuilder = VehicleSpecification.TruckBuilder()
+            .withGrossWeightInKilograms(truckSpecifications.grossWeightInKilograms!)
+            .withHeightInCentimeters(truckSpecifications.heightInCentimeters!)
+            .withWidthInCentimeters(truckSpecifications.widthInCentimeters!)
+            .withLengthInCentimeters(truckSpecifications.lengthInCentimeters!)
+            .withTruckCategory(MyTruckSpecs.truckCategory)
+            .withTunnelCategory(.b)
+            .withHazardousMaterials(hazardousMaterials)
+
+        if let weightPerAxle = truckSpecifications.weightPerAxleInKilograms {
+            truckBuilder.withWeightPerAxleInKilograms(weightPerAxle)
+        }
+
+        if let axleCount = truckSpecifications.axleCount {
+            truckBuilder.withAxleCount(axleCount)
+        }
+
+        if let trailerCount = truckSpecifications.trailerCount {
+            truckBuilder.withTrailerCount(trailerCount)
+        }
+
+        let vehicleSpecification = truckBuilder.build()
+        let transportSpecification = TransportSpecification.TruckBuilder()
+            .withVehicleSpecification(vehicleSpecification)
+            .build()
+
+        MapContentSettings.configureVehicleRestrictionFilter(transportSpecs: transportSpecification)
     }
 
     // Enable layers that may be useful for truck drivers.
@@ -783,7 +807,7 @@ class TruckGuidanceExample: TapDelegate,
                         if let maxTunnelCategory = details.maxTunnelCategory {
                             print("Section \(sectionNr): Exceeded maxTunnelCategory: \(maxTunnelCategory.rawValue)")
                         }
-                        if let forbiddenTruckType = details.forbiddenTruckType {
+                        if let forbiddenTruckType = details.forbiddenTruckCategory {
                             print("Section \(sectionNr): ForbiddenTruckType is required: \(forbiddenTruckType.rawValue)")
                         }
                         if let timeRule = details.timeRule {
