@@ -55,6 +55,7 @@ import com.here.sdk.mapview.MapMeasure;
 import com.here.sdk.mapview.MapScene;
 import com.here.sdk.mapview.MapScheme;
 import com.here.sdk.mapview.MapView;
+import com.here.sdk.mapview.RenderSize;
 import com.here.sdk.navigation.FixedCameraBehavior;
 import com.here.sdk.navigation.LocationSimulator;
 import com.here.sdk.navigation.LocationSimulatorOptions;
@@ -232,8 +233,8 @@ public class MainActivity extends AppCompatActivity {
         // MarkerType.PEDESTRIAN_INACTIVE and MarkerType.NAVIGATION_INACTIVE.
         // If set with a gray texture model, the type can be switched by calling locationIndicator.setActive(false)
         // when the GPS accuracy is weak or no location was found.
-        locationIndicator.setMarker3dModel(pedestrianMapMarker3DModel, scaleFactor, LocationIndicator.MarkerType.PEDESTRIAN);
-        locationIndicator.setMarker3dModel(navigationMapMarker3DModel, scaleFactor, LocationIndicator.MarkerType.NAVIGATION);
+        locationIndicator.setMarker3dModel(pedestrianMapMarker3DModel, scaleFactor, LocationIndicator.MarkerType.PEDESTRIAN, RenderSize.Unit.DENSITY_INDEPENDENT_PIXELS);
+        locationIndicator.setMarker3dModel(navigationMapMarker3DModel, scaleFactor, LocationIndicator.MarkerType.NAVIGATION, RenderSize.Unit.DENSITY_INDEPENDENT_PIXELS);
 
         locationIndicator.setAccuracyVisualized(true);
         locationIndicator.setLocationIndicatorStyle(IndicatorStyle.PEDESTRIAN);

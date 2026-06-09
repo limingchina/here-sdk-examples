@@ -222,8 +222,8 @@ class _MyAppState extends State<MyApp> implements HERE.LocationListener, Animati
     // .pedestrianInactive and .navigationInactive.
     // If set with a gray texture model, the type can be switched by calling locationIndicator.isActive = false
     // when the GPS accuracy is weak or no location was found.
-    locationIndicator.setMarker3dModel(pedestrianMapMarker3DModel, scaleFactor, LocationIndicatorMarkerType.pedestrian);
-    locationIndicator.setMarker3dModel(navigationMapMarker3DModel, scaleFactor, LocationIndicatorMarkerType.navigation);
+    locationIndicator.setMarker3dModelWithRenderSizeUnit(pedestrianMapMarker3DModel, scaleFactor, LocationIndicatorMarkerType.pedestrian, RenderSizeUnit.densityIndependentPixels);
+    locationIndicator.setMarker3dModelWithRenderSizeUnit(navigationMapMarker3DModel, scaleFactor, LocationIndicatorMarkerType.navigation, RenderSizeUnit.densityIndependentPixels);
 
     locationIndicator.isAccuracyVisualized = true;
     locationIndicator.locationIndicatorStyle = LocationIndicatorIndicatorStyle.pedestrian;

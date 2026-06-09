@@ -102,89 +102,34 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  // Map Schemes
-  void _loadSceneLiteNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.liteNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
+  Widget _buildMapSchemeExpansionTile(BuildContext context) {
+    final List<MenuSectionItem> menuItems = [
+      {'label': 'Lite Night', 'scheme': MapScheme.liteNight},
+      {'label': 'Hybrid Day', 'scheme': MapScheme.hybridDay},
+      {'label': 'Hybrid Night', 'scheme': MapScheme.hybridNight},
+      {'label': 'Lite Day', 'scheme': MapScheme.liteDay},
+      {'label': 'Lite Hybrid Day', 'scheme': MapScheme.liteHybridDay},
+      {'label': 'Lite Hybrid Night', 'scheme': MapScheme.liteHybridNight},
+      {'label': 'Logistics Day', 'scheme': MapScheme.logisticsDay},
+      {'label': 'Logistics Hybrid Day', 'scheme': MapScheme.logisticsHybridDay},
+      {'label': 'Logistics Night', 'scheme': MapScheme.logisticsNight},
+      {'label': 'Logistics Hybrid Night', 'scheme': MapScheme.logisticsHybridNight},
+      {'label': 'Normal Day', 'scheme': MapScheme.normalDay},
+      {'label': 'Normal Night', 'scheme': MapScheme.normalNight},
+      {'label': 'Road Network Day', 'scheme': MapScheme.roadNetworkDay},
+      {'label': 'Road Network Night', 'scheme': MapScheme.roadNetworkNight},
+      {'label': 'Satellite', 'scheme': MapScheme.satellite},
+      {'label': 'Topo Day', 'scheme': MapScheme.topoDay},
+      {'label': 'Topo Night', 'scheme': MapScheme.topoNight},
+    ].map((item) =>
+      MenuSectionItem(item['label'] as String, () => _onMapSchemeSelected(item['scheme'] as MapScheme))
+    ).toList();
+    return MenuSectionExpansionTile("Map Schemes", menuItems);
   }
 
-  void _loadSceneHybridDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.hybridDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneHybridNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.hybridNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLiteDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.liteDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLiteHybridDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.liteHybridDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLiteHybridNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.liteHybridNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLogisticsDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.logisticsDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLogisticsHybridDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.logisticsHybridDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLogisticsNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.logisticsNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneLogisticsHybridNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.liteHybridNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneNormalDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.normalDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneNormalNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.normalNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneRoadNetworkDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.roadNetworkDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneRoadNetworkNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.roadNetworkNight);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneSatelliteScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.satellite);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneTopoDayScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.topoDay);
-    _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
-  }
-
-  void _loadSceneTopoNightScheme() {
-    _mapSchemesExample?.loadSceneForMapScheme(MapScheme.topoNight);
+  // Generic handler for map scheme selection
+  void _onMapSchemeSelected(MapScheme scheme) {
+    _mapSchemesExample?.loadSceneForMapScheme(scheme);
     _mapFeaturesExample?.applyEnabledFeaturesForMapScene(_mapFeaturesExample?.getEnabledFeatures());
   }
 
@@ -299,31 +244,6 @@ class _MyAppState extends State<MyApp> {
     children.add(locationIndicatorTile);
 
     return children;
-  }
-
-  // Build the menu entries for the MapMarker section.
-  Widget _buildMapSchemeExpansionTile(BuildContext context) {
-    final List<MenuSectionItem> menuItems = [
-      MenuSectionItem("Lite Night", _loadSceneLiteNightScheme),
-      MenuSectionItem("Hybrid Day", _loadSceneHybridDayScheme),
-      MenuSectionItem("Hybrid Night", _loadSceneHybridNightScheme),
-      MenuSectionItem("Lite Day", _loadSceneLiteDayScheme),
-      MenuSectionItem("Lite Hybrid Day", _loadSceneLiteHybridDayScheme),
-      MenuSectionItem("Lite Hybrid Night", _loadSceneLiteHybridNightScheme),
-      MenuSectionItem("Logistics Day", _loadSceneLogisticsDayScheme),
-      MenuSectionItem("Logistics Hybrid Day", _loadSceneLogisticsHybridDayScheme),
-      MenuSectionItem("Logistics Night", _loadSceneLogisticsNightScheme),
-      MenuSectionItem("Logistics Hybrid Night", _loadSceneLogisticsHybridNightScheme),
-      MenuSectionItem("Normal Day", _loadSceneNormalDayScheme),
-      MenuSectionItem("Normal Night", _loadSceneNormalNightScheme),
-      MenuSectionItem("Road Network Day", _loadSceneRoadNetworkDayScheme),
-      MenuSectionItem("Road Network Night", _loadSceneRoadNetworkNightScheme),
-      MenuSectionItem("Satellite", _loadSceneSatelliteScheme),
-      MenuSectionItem("Topo Day", _loadSceneTopoDayScheme),
-      MenuSectionItem("Topo Night", _loadSceneTopoNightScheme),
-    ];
-
-    return MenuSectionExpansionTile("Map Schemes", menuItems);
   }
 
   // Build the menu entries for the LocationIndicator section.

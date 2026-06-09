@@ -65,6 +65,7 @@ import com.here.sdk.mapview.MapMarker3DModel
 import com.here.sdk.mapview.MapMeasure
 import com.here.sdk.mapview.MapScheme
 import com.here.sdk.mapview.MapView
+import com.here.sdk.mapview.RenderSize
 import com.here.sdk.navigation.FixedCameraBehavior
 import com.here.sdk.navigation.LocationSimulator
 import com.here.sdk.navigation.LocationSimulatorOptions
@@ -314,12 +315,14 @@ class MainActivity : ComponentActivity() {
         locationIndicator.setMarker3dModel(
             pedestrianMapMarker3DModel,
             scaleFactor,
-            LocationIndicator.MarkerType.PEDESTRIAN
+            LocationIndicator.MarkerType.PEDESTRIAN,
+            RenderSize.Unit.DENSITY_INDEPENDENT_PIXELS
         )
         locationIndicator.setMarker3dModel(
             navigationMapMarker3DModel,
             scaleFactor,
-            LocationIndicator.MarkerType.NAVIGATION
+            LocationIndicator.MarkerType.NAVIGATION,
+            RenderSize.Unit.DENSITY_INDEPENDENT_PIXELS
         )
 
         locationIndicator.isAccuracyVisualized = true

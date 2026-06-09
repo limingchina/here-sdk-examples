@@ -17,235 +17,226 @@
  * License-Filename: LICENSE
  */
 
-import 'dart:ffi';
-
 import 'package:flutter/cupertino.dart';
+import 'package:indoor_map_app/indoor_routing_data_provider_interface.dart';
+import 'package:indoor_map_app/indoor_topology_info.dart';
+import 'package:indoor_map_app/venue_data_provider_interface.dart';
 import 'package:here_sdk/core.dart';
 import 'package:here_sdk/mapview.dart';
-import 'package:here_sdk/src/sdk/venue/routing/venue_transport_mode.dart';
 import 'package:here_sdk/venue.control.dart';
 import 'package:here_sdk/venue.data.dart';
+import 'package:here_sdk/venue.routing.dart';
 import 'package:here_sdk/venue.style.dart';
-import 'package:here_sdk/venue.dart';
-import 'package:indoor_map_app/geometry_info.dart';
-import 'package:indoor_map_app/image_helper.dart';
-import 'events.dart';
-import 'events.dart';
 
-enum TopologyDirectionality { toStart, fromStart, bidirectional, undefined }
-
+/// Tap controller for the indoor map.
+///
+/// Handles geometry and topology selection on the map and forwards events to
+/// [VenueDataProviderInterface] and [IndoorRoutingDataProviderInterface].
 class VenueTapController {
-  final HereMapController? hereMapController;
-  final VenueMap venueMap;
-  final GeometryInfoState? geometryInfoState;
-  String tappedSpaceName = "";
-  int clickCount = 0;
-  int lineCount = 0;
-  String topologyDetails = "";
+  VenueTapController({
+    required this.hereMapController,
+    required this.venueMap,
+    required this.venueDataProviderInterface,
+    required this.routingDataProviderInterface,
+  }) {
+    if (venueMap == null) {
+      debugPrint('VenueTapController: venueMap is null');
+      return;
+    }
+    levelChangeListener = VenueLevelSelectionListener((
+      Venue venue,
+      VenueDrawing drawing,
+      VenueLevel? oldLevel,
+      VenueLevel newLevel,
+    ) {
+      onLevelChanged(venue);
+    });
+    drawingChangeListener = VenueDrawingSelectionListener((
+      Venue venue,
+      VenueDrawing? oldDrawing,
+      VenueDrawing newDrawing,
+    ) {
+      onLevelChanged(venue);
+    });
+    venueMap?.addLevelSelectionListener(levelChangeListener);
+    venueMap?.addDrawingSelectionListener(drawingChangeListener);
+    markerImage = MapImage.withFilePathAndWidthAndHeight('assets/ic_route_start.png', 100, 100);
+  }
 
-  MapImage? _markerImage;
-  MapMarker? _marker;
-  Venue? _selectedVenue;
-  VenueGeometry? _selectedGeometry;
-  VenueTopology? _selectedTopology;
+  HereMapController? hereMapController;
+  VenueMap? venueMap;
+  VenueDataProviderInterface venueDataProviderInterface;
+  IndoorRoutingDataProviderInterface routingDataProviderInterface;
+  Venue? selectedVenue;
+  VenueGeometry? selectedGeometry;
+  VenueTopology? selectedTopology;
+  MapImage? markerImage;
+  MapMarker? marker;
+  final Anchor2D anchor2D = Anchor2D.withHorizontalAndVertical(0.5, 1.0);
+  late VenueLevelSelectionListener levelChangeListener;
+  late VenueDrawingSelectionListener drawingChangeListener;
 
-  // Create geometry and label styles for the selected geometry.
-  final VenueGeometryStyle _geometryStyle = VenueGeometryStyle(
-    Color.fromARGB(255, 72, 187, 245),
-    Color.fromARGB(255, 30, 170, 235),
+  static const int _alpha = 255;
+
+  final VenueGeometryStyle geometryStyle = VenueGeometryStyle(
+    Color.fromARGB(_alpha, 72, 187, 245),
+    Color.fromARGB(_alpha, 30, 170, 235),
     1,
   );
-  final VenueLabelStyle _labelStyle = VenueLabelStyle(
-    Color.fromARGB(255, 255, 255, 255),
-    Color.fromARGB(255, 0, 130, 195),
+  final VenueLabelStyle labelStyle = VenueLabelStyle(
+    Color.fromARGB(_alpha, 255, 255, 255),
+    Color.fromARGB(_alpha, 0, 130, 195),
     1,
     28,
   );
-  final VenueGeometryStyle _topologyStyle = VenueGeometryStyle(
-    Color.fromARGB(255, 72, 187, 245),
-    Color.fromARGB(255, 90, 196, 193),
+  final VenueGeometryStyle topologyStyle = VenueGeometryStyle(
+    Color.fromARGB(_alpha, 72, 187, 245),
+    Color.fromARGB(_alpha, 90, 196, 193),
     4,
   );
 
-  VenueTapController({required this.hereMapController, required this.venueMap, required this.geometryInfoState}) {
-    // Get an image for MapMarker.
-    ImageHelper.loadFileAsUint8List(
-      'poi.png',
-    ).then((imagePixelData) => _markerImage = MapImage.withPixelDataAndImageFormat(imagePixelData, ImageFormat.png));
+  void removeListener() {
+    venueMap?.removeLevelSelectionListener(levelChangeListener);
+    venueMap?.removeDrawingSelectionListener(drawingChangeListener);
   }
 
-  onTap(Point2D origin) {
-    _deselectGeometry();
-    deselectTopology();
-
-    // Get geo coordinates of the tapped point.
-    GeoCoordinates? position = hereMapController!.viewToGeoCoordinates(origin);
-    if (position == null) {
-      return;
+  void onTap(Point2D origin) {
+    if (selectedGeometry != null) {
+      deselectGeometry();
+      selectedGeometry = null;
+    }
+    if (selectedTopology != null) {
+      deselectTopology();
+      selectedTopology = null;
     }
 
-    VenueTopology? topology = venueMap.getTopology(position);
+    final GeoCoordinates? position = hereMapController!.viewToGeoCoordinates(origin);
+    if (position == null) return;
+
+    final VenueTopology? topology = venueMap?.getTopology(position);
+    final VenueGeometry? geometry = venueMap?.getGeometry(position);
+
     if (topology != null) {
       selectTopology(topology, position);
+    } else if (geometry != null) {
+      selectGeometry(geometry, position, false);
     } else {
-      // Get a VenueGeometry under the tapped position.
-      VenueGeometry? geometry = venueMap.getGeometry(position);
-      if (geometry != null) {
-        spaceTapped.isSpaceTapped.value = false;
-        spaceTapped.isSpaceTapped.value = true;
-        clickCount = 1;
-        selectGeometry(geometry, position, false);
-        tappedSpaceName = geometry.name + ", " + geometry.level.name;
-        print('tappedSpaceName : $tappedSpaceName');
-      } else {
-        spaceTapped.isSpaceTapped.value = false;
-        // If no geometry was tapped, check if there is a not-selected venue under
-        // the tapped position. If there is one, select it.
-        Venue? venue = venueMap.getVenue(position);
-        if (venue != null) {
-          venueMap.selectedVenue = venue;
-        }
+      final Venue? venue = venueMap?.getVenue(position);
+      if (venue != null) {
+        venueMap?.selectedVenue = venue;
       }
     }
   }
 
-  onLevelChanged(Venue? selectedVenue) {
-    if (selectedVenue == _selectedVenue &&
-        _selectedGeometry != null &&
-        selectedVenue!.selectedLevel == _selectedGeometry!.level) {
-      return;
-    }
-    _deselectGeometry();
-  }
+  void selectGeometry(VenueGeometry geometry, GeoCoordinates position, bool center) {
+    deselectGeometry();
+    selectedVenue = venueMap?.selectedVenue;
+    if (selectedVenue == null) return;
 
-  selectTopology(VenueTopology topology, GeoCoordinates position) {
-    _selectedVenue = venueMap.selectedVenue;
-    topologyDetails = getTopologyInfo(topology);
-    _selectedTopology = topology;
-    if (_selectedTopology != null) {
-      topologyLineTapped.isTopologyLineTapped.value = true;
-      _selectedVenue!.setCustomStyleToTopology([topology], _topologyStyle);
-    }
-    _selectedTopology = topology;
-
-    hereMapController!.camera.lookAtPoint(position);
-  }
-
-  String getTopologyInfo(VenueTopology topology) {
-    StringBuffer result = StringBuffer();
-    Map<String, List<String>> vehicleGroups = {};
-    String pedestrianDirectionality = " ";
-    lineCount = 0;
-
-    // First line: topology ID
-    result.writeln(topology.identifier);
-    lineCount++;
-
-    // Process accessibility
-    for (int i = 0; i < topology.accessibility.length; i++) {
-      var access = topology.accessibility[i];
-      var mode = access.mode;
-      String imageName = '';
-
-      switch (mode.name) {
-        case 'car':
-          imageName = 'img_car';
-          break;
-        case 'taxi':
-          imageName = 'img_taxi';
-          break;
-        case 'scooter':
-          imageName = 'img_bike';
-          break;
-        case 'pedestrian':
-          imageName = 'img_pedestrian';
-          pedestrianDirectionality = access.direction.name;
-          break;
+    selectedGeometry = geometry;
+    if (selectedVenue!.venueModel.topologies.isEmpty) {
+      venueDataProviderInterface.showTappedGeometryInfo(geometry);
+      if (selectedGeometry?.lookupType == VenueGeometryLookupType.icon) {
+        _addMarkerImageToMap(position);
       }
-
-      if (mode.name == 'pedestrian') {
-        // Second line: pedestrian image and directionality
-        result.write('img_pedestrian.png ');
-        if (pedestrianDirectionality.isNotEmpty) {
-          result.writeln(pedestrianDirectionality.toUpperCase());
-          lineCount++;
-        }
-      } else if (imageName.isNotEmpty) {
-        var direction = access.direction.name;
-
-        vehicleGroups.putIfAbsent(direction, () => []);
-        vehicleGroups[direction]!.add(imageName);
-      }
+    } else {
+      routingDataProviderInterface.onSpaceSelectionForPreview(selectedGeometry!, position);
     }
-
-    // Process vehicle groups
-    for (var direction in vehicleGroups.keys) {
-      var imageNames = vehicleGroups[direction];
-      if (imageNames != null && imageNames.isNotEmpty) {
-        for (var imageName in imageNames) {
-          result.write('$imageName.png ');
-        }
-        result.writeln(direction.toUpperCase());
-        lineCount++;
-      }
-    }
-
-    return result.toString();
-  }
-
-  deselectTopology() {
-    if (_selectedVenue != null && _selectedTopology != null) {
-      _selectedVenue!.setCustomStyleToTopology([_selectedTopology!], null);
-      _selectedTopology = null;
-    }
-    topologyLineTapped.isTopologyLineTapped.value = false;
-  }
-
-  selectGeometry(VenueGeometry geometry, GeoCoordinates position, bool center) {
-    _deselectGeometry();
-    _selectedVenue = venueMap.selectedVenue;
-    _selectedVenue!.selectedDrawing = geometry.level.drawing;
-    _selectedVenue!.selectedLevel = geometry.level;
-    _selectedGeometry = geometry;
-    // Set a selected geometry to the GeometryInfoState, to display
-    // the information about it.
-    geometryInfoState!.geometry = geometry;
-    // Set a selected style for the geometry.
-    _selectedVenue!.setCustomStyle([geometry], _geometryStyle, _labelStyle);
-    // If there is a geometry, put a marker on top of it.
-    if (_selectedGeometry!.lookupType == VenueGeometryLookupType.icon) {
-      _addPOIMapMarker(position);
-    }
+    selectedVenue?.setCustomStyle(<VenueGeometry>[geometry], geometryStyle, labelStyle);
     if (center) {
       hereMapController!.camera.lookAtPoint(position);
     }
+    debugPrint(
+      'Selected Geometry: ${geometry.identifier}, level: ${geometry.level.shortName}, drawing: ${geometry.level.drawing.identifier}',
+    );
   }
 
-  _deselectGeometry() {
-    // If the map marker is already on the screen, remove it.
-    if (_marker != null) {
-      hereMapController!.mapScene.removeMapMarker(_marker!);
-      _marker = null;
-    }
-
-    // If there is a selected geometry, reset its style.
-    if (_selectedVenue != null && _selectedGeometry != null) {
-      _selectedVenue!.setCustomStyle([_selectedGeometry!], null, null);
-    }
-
-    // Reset the geometry in the GeometryInfoState.
-    geometryInfoState!.geometry = null;
-  }
-
-  _addPOIMapMarker(GeoCoordinates geoCoordinates) {
-    if (_markerImage == null) {
+  void deselectGeometry() {
+    if (routingDataProviderInterface.isRoutingSpaceSelectionUIActiveOnMap()) {
+      routingDataProviderInterface.onSpaceDeselectionOnMap();
       return;
     }
+    if (marker != null) {
+      hereMapController!.mapScene.removeMapMarker(marker!);
+      marker = null;
+    }
+    if (selectedVenue != null && selectedGeometry != null) {
+      selectedVenue?.setCustomStyle(<VenueGeometry>[selectedGeometry!], null, null);
+    }
+    selectedGeometry = null;
+    venueDataProviderInterface.onDeselectGeometryFromTapController();
+  }
 
-    // By default, the anchor point is set to 0.5, 0.5 (= centered).
-    // Here the bottom, middle position should point to the location.
-    Anchor2D anchor2D = Anchor2D.withHorizontalAndVertical(0.5, 1);
-    _marker = MapMarker.withAnchor(geoCoordinates, _markerImage!, anchor2D);
-    hereMapController!.mapScene.addMapMarker(_marker!);
+  void _addMarkerImageToMap(GeoCoordinates coordinates) {
+    if (markerImage == null) return;
+    marker = MapMarker.withAnchor(coordinates, markerImage!, anchor2D);
+    if (marker != null) {
+      hereMapController?.mapScene.addMapMarker(marker!);
+    }
+  }
+
+  void selectTopology(VenueTopology topology, GeoCoordinates position) {
+    selectedVenue = venueMap?.selectedVenue;
+    if (selectedVenue == null) return;
+    selectedTopology = topology;
+
+    final List<VenueTransportMode> modes = <VenueTransportMode>[];
+    final List<VenueTopologyTopologyDirectionality> directions = <VenueTopologyTopologyDirectionality>[];
+    final VenueTopologyAccessCharacteristicsList accessList = topology.accessibility;
+    for (final VenueTopologyAccessCharacteristics access in accessList) {
+      modes.add(access.mode);
+      directions.add(access.direction);
+    }
+
+    venueDataProviderInterface.showTappedTopologyInfo(
+      IndoorTopologyInfo(topologyId: topology.identifier, modes: modes, directions: directions),
+    );
+
+    selectedVenue?.setCustomStyleToTopology(<VenueTopology>[topology], topologyStyle);
+    hereMapController!.camera.lookAtPoint(position);
+  }
+
+  void deselectTopology() {
+    if (selectedVenue != null && selectedTopology != null) {
+      selectedVenue?.setCustomStyleToTopology(<VenueTopology>[selectedTopology!], null);
+    }
+    selectedTopology = null;
+    venueDataProviderInterface.onDeselectTopologyFromTapController();
+  }
+
+  void levelChangeBasedOnGeometrySelection(VenueGeometry geometry) {
+    selectedVenue = venueMap?.selectedVenue;
+    if (geometry.level.identifier != selectedVenue?.selectedLevel.identifier) {
+      selectedVenue?.selectedLevel = geometry.level;
+      venueDataProviderInterface.onLevelChangeAfterGeometrySelection(
+        selectedVenue!.selectedDrawing.levels.length - 1 - selectedVenue!.selectedLevelIndex,
+      );
+    }
+  }
+
+  void drawingChangeBasedOnGeometrySelection(VenueGeometry geometry) {
+    selectedVenue = venueMap?.selectedVenue;
+    if (selectedVenue?.selectedDrawing.identifier != geometry.level.drawing.identifier) {
+      selectedVenue?.selectedDrawing = geometry.level.drawing;
+      final int drawingIndex = selectedVenue!.venueModel.drawings.indexWhere(
+        (VenueDrawing d) => d.identifier == geometry.level.drawing.identifier,
+      );
+      if (drawingIndex != -1) {
+        venueDataProviderInterface.onDrawingChangeAfterGeometrySelection(drawingIndex);
+      }
+    }
+  }
+
+  void onLevelChanged(Venue venue) {
+    if (routingDataProviderInterface.isRoutingMainMenuUIActiveOnMap() ||
+        routingDataProviderInterface.isRoutingSpaceSelectionUIActiveOnMap()) {
+      routingDataProviderInterface.handleDestinationMarkerOnMapInLevelChange();
+      return;
+    }
+    if ((venue == selectedVenue) && (selectedGeometry != null) && (venue.selectedLevel == selectedGeometry?.level)) {
+      return;
+    }
+    deselectTopology();
+    deselectGeometry();
   }
 }

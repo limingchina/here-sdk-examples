@@ -126,10 +126,13 @@ class NavigationCustomExample: AnimationDelegate, LocationDelegate {
         // when the GPS accuracy is weak or no location was found.
         locationIndicator.setMarker3dModel(pedestrianMapMarker3DModel,
                                            scale: scaleFactor,
-                                           type: LocationIndicator.MarkerType.pedestrian)
+                                           type: LocationIndicator.MarkerType.pedestrian,
+                                           renderSizeUnit: RenderSize.Unit.densityIndependentPixels)
+        
         locationIndicator.setMarker3dModel(navigationMapMarker3DModel,
                                            scale: scaleFactor,
-                                           type: LocationIndicator.MarkerType.navigation)
+                                           type: LocationIndicator.MarkerType.navigation,
+                                           renderSizeUnit: RenderSize.Unit.densityIndependentPixels)
         
         locationIndicator.isAccuracyVisualized = true
         locationIndicator.locationIndicatorStyle = LocationIndicator.IndicatorStyle.pedestrian
