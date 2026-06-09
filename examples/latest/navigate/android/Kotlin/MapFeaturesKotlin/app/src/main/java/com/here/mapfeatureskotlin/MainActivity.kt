@@ -224,74 +224,30 @@ class MainActivity : ComponentActivity() {
     fun CustomDropDownMenu() {
         DropdownMenu(
             onMapSchemesClick = { item ->
-                when (item) {
-                    "Lite Night" -> mapSchemesExample.loadSchemeForCurrentView(
+                val scheme = when (item) {
+                    "Lite Night" -> MapScheme.LITE_NIGHT
+                    "Hybrid Day" -> MapScheme.HYBRID_DAY
+                    "Hybrid Night" -> MapScheme.HYBRID_NIGHT
+                    "Lite Day" -> MapScheme.LITE_DAY
+                    "Lite Hybrid Day" -> MapScheme.LITE_HYBRID_DAY
+                    "Lite Hybrid Night" -> MapScheme.LITE_HYBRID_NIGHT
+                    "Logistics Day" -> MapScheme.LOGISTICS_DAY
+                    "Logistics Hybrid Day" -> MapScheme.LOGISTICS_HYBRID_DAY
+                    "Logistics Night" -> MapScheme.LOGISTICS_NIGHT
+                    "Logistics Hybrid Night" -> MapScheme.LOGISTICS_HYBRID_NIGHT
+                    "Normal Day" -> MapScheme.NORMAL_DAY
+                    "Normal Night" -> MapScheme.NORMAL_NIGHT
+                    "Road Network Day" -> MapScheme.ROAD_NETWORK_DAY
+                    "Road Network Night" -> MapScheme.ROAD_NETWORK_NIGHT
+                    "Satellite" -> MapScheme.SATELLITE
+                    "Topo Day" -> MapScheme.TOPO_DAY
+                    "Topo Night" -> MapScheme.TOPO_NIGHT
+                    else -> null
+                }
+                scheme?.let {
+                    mapSchemesExample.loadSchemeForCurrentView(
                         getCurrentVisibleMapView(),
-                        MapScheme.LITE_NIGHT
-                    )
-                    "Hybrid Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.HYBRID_DAY
-                    )
-                    "Hybrid Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.HYBRID_NIGHT
-                    )
-                    "Lite Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LITE_DAY
-                    )
-                    "Lite Hybrid Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LITE_HYBRID_DAY
-                    )
-                    "Lite Hybrid Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LITE_HYBRID_NIGHT
-                    )
-                    "Logistics Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LOGISTICS_DAY
-                    )
-                    "Logistics Hybrid Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LOGISTICS_HYBRID_DAY
-                    )
-                    "Logistics Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LOGISTICS_NIGHT
-                    )
-                    "Logistics Hybrid Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.LOGISTICS_HYBRID_NIGHT
-                    )
-                    "Normal Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.NORMAL_DAY
-                    )
-                    "Normal Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.NORMAL_NIGHT
-                    )
-                    "Road Network Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.ROAD_NETWORK_DAY
-                    )
-                    "Road Network Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.ROAD_NETWORK_NIGHT
-                    )
-                    "Satellite" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.SATELLITE
-                    )
-                    "Topo Day" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.TOPO_DAY
-                    )
-                    "Topo Night" -> mapSchemesExample.loadSchemeForCurrentView(
-                        getCurrentVisibleMapView(),
-                        MapScheme.TOPO_NIGHT
+                        it
                     )
                 }
             },
