@@ -25,10 +25,11 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
+import com.here.sdk.core.errors.InstantiationErrorException;
 import com.here.sdk.core.GeoCoordinates;
 import com.here.sdk.core.Location;
 import com.here.sdk.core.LocationListener;
-import com.here.sdk.core.errors.InstantiationErrorException;
+import com.here.sdk.core.OrientationListener;
 import com.here.sdk.location.LocationAccuracy;
 import com.here.sdk.location.LocationEngine;
 import com.here.sdk.location.LocationEngineStatus;
@@ -98,6 +99,33 @@ public class PositioningExample {
         }
     };
 
+    private final OrientationListener orientationListener = new OrientationListener() {
+        @Override
+        public void onOrientationUpdated(@NonNull com.here.sdk.core.Orientation orientation) {
+            // Log available orientation values
+            StringBuilder sb = new StringBuilder("Orientation updated: ");
+
+            if (orientation.frame != null) {
+                sb.append("frame=").append(orientation.frame.name());
+            }
+
+            if (orientation.heading != null) {
+                sb.append("heading=").append(orientation.heading).append(" deg");
+            }
+            if (orientation.pitch != null) {
+                sb.append("pitch=").append(orientation.pitch).append(" deg");
+            }
+            if (orientation.roll != null) {
+                sb.append("roll=").append(orientation.roll).append(" deg");
+            }
+            if (orientation.timestamp != null) {
+                sb.append("timestamp=").append(orientation.timestamp.toMillis()).append("ms");
+            }
+
+            Log.d(TAG, sb.toString());
+        }
+    };
+
     private final LocationIssueListener locationIssueListener = new LocationIssueListener() {
         @Override
         public void onLocationIssueChanged(@NonNull List<LocationIssueType> issues) {
@@ -132,6 +160,7 @@ public class PositioningExample {
         locationEngine.addLocationStatusListener(locationStatusListener);
         locationEngine.addLocationIssueListener(locationIssueListener);
         locationEngine.addLocationListener(locationListener);
+        locationEngine.addOrientationListener(orientationListener);
         // By calling confirmHEREPrivacyNoticeInclusion() you confirm that this app informs on
         // data collection, which is done for this app via PositioningTermsAndPrivacyHelper,
         // which shows a possible example for this.
@@ -141,6 +170,7 @@ public class PositioningExample {
 
     public void stopLocating() {
         locationEngine.removeLocationIssueListener(locationIssueListener);
+        locationEngine.removeOrientationListener(orientationListener);
         locationEngine.stop();
     }
 

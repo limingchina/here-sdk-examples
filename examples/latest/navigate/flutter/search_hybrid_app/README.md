@@ -1,4 +1,6 @@
-The SearchHybrid example app shows how to search for places including autosuggestions, for the address that belongs to certain geographic coordinates (_reverse geocoding_) and for the geographic coordinates that belong to an address (_geocoding_). It also shows how to search offline, when no internet connection is available. You can find how this is done in [SearchExample.dart](lib/SearchExample.dart).
+The SearchHybrid example app shows how to search for places including autosuggestions, for the address that belongs to certain geographic coordinates (_reverse geocoding_) and for the geographic coordinates that belong to an address (_geocoding_). You can find how this is done in [SearchExample.dart](lib/SearchExample.dart).
+
+Map storage in this app relies only on cache, and offline maps are not loaded. Offline maps could also be implemented here, but offline search is out of scope for this app. To learn how to implement it, see the offline_maps_app example and [OfflineMapsExample.dart](../offline_maps_app/lib/OfflineMapsExample.dart).
 
 Build instructions:
 -------------------

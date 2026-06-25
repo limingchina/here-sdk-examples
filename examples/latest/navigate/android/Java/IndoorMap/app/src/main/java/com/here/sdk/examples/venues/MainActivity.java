@@ -364,13 +364,14 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setAdapter(null);
         List<VenueGeometry> list = new ArrayList<>();
         Log.d(TAG, "Geometries size: " + geometryList.size());
-        for(VenueGeometry geometry : geometryList) {
-            if(geometry.getName().toLowerCase().contains(s.toLowerCase()) || geometry.getLevel().getName().toLowerCase().contains(s.toLowerCase())
-            || (geometry.getInternalAddress() != null ? geometry.getInternalAddress().getAddress() : "").toLowerCase().contains(s.toLowerCase())) {
+        for (VenueGeometry geometry : geometryList) {
+            String spaceName = geometry.getName().isEmpty() ? geometry.getIdentifier() : geometry.getName();
+            if (spaceName.toLowerCase().contains(s.toLowerCase()) || geometry.getLevel().getName().toLowerCase().contains(s.toLowerCase())
+                    || (geometry.getInternalAddress() != null ? geometry.getInternalAddress().getAddress() : "").toLowerCase().contains(s.toLowerCase())) {
                 list.add(geometry);
             }
         }
-        if(!list.isEmpty()) {
+        if (!list.isEmpty()) {
             recyclerView.setAdapter(new SpaceAdapter(getApplicationContext(), list, this));
             // set fade to 1 in case of space list
             recyclerView.setAlpha(1f);
@@ -552,7 +553,7 @@ public class MainActivity extends AppCompatActivity {
                 mapLoadDone = true;
                 mapView.getCamera().zoomTo(18);
                 setWatermark(1600);
-                geometryList = venueModel.getGeometriesByName();
+                geometryList = venueModel.getGeometries();
                 venueTapController.setGeometries(geometryList);
                 recyclerView.setAdapter(new SpaceAdapter(getApplicationContext(), geometryList, MainActivity.this));
                 // set fade to 1 when new venue is loaded
@@ -587,7 +588,7 @@ public class MainActivity extends AppCompatActivity {
                     // to be able to select another venue.
                     progressBar.setVisibility(View.GONE);
                     mapLoadDone = true;
-                    geometryList = venueModel.getGeometriesByName();
+                    geometryList = venueModel.getGeometries();
                     venueTapController.setGeometries(geometryList);
                     recyclerView.setAdapter(new SpaceAdapter(getApplicationContext(), geometryList, MainActivity.this));
                     venue_search.setHint("Search for Spaces");
@@ -810,6 +811,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void onSpaceItemClicked(VenueGeometry venueGeometry) {
+        venue_search.setText("");
         venueTapController.selectGeometry(venueGeometry, venueGeometry.getCenter(), true);
         if(sheetBehavior.getState() != BottomSheetBehavior.STATE_COLLAPSED)
             sheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);

@@ -71,6 +71,11 @@ class SearchHybridExample: TapDelegate,
     }
 
     func onSearchButtonClicked() {
+        if !isDeviceConnected {
+            showOfflineSearchOutOfScopeMessage()
+            return
+        }
+
         // Search for "Pizza" and show the results on the map.
         searchExample()
 
@@ -79,8 +84,20 @@ class SearchHybridExample: TapDelegate,
     }
 
     func onGeoCodeButtonClicked() {
+        if !isDeviceConnected {
+            showOfflineSearchOutOfScopeMessage()
+            return
+        }
+
         // Search for the location that belongs to an address and show it on the map.
         geocodeAnAddress()
+    }
+
+    private func showOfflineSearchOutOfScopeMessage() {
+        showDialog(
+            title: "Offline Mode",
+            message: "Map storage in this app relies solely on caching, so offline maps are not yet loaded. While offline map support could be implemented, offline search is outside the scope of this app. For implementation details, see the OfflineMaps example app."
+        )
     }
 
     func onToggleOnlineButton() {

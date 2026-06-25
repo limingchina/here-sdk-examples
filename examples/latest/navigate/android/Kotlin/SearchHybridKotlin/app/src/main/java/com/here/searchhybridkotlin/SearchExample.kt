@@ -92,6 +92,11 @@ class SearchExample(private val context: Context, private val mapView: MapView) 
     }
 
     fun onSearchButtonClicked() {
+        if (!isDeviceConnected) {
+            showOfflineSearchOutOfScopeMessage()
+            return
+        }
+
         // Search for "Pizza" and show the results on the map.
         searchExample()
 
@@ -100,8 +105,20 @@ class SearchExample(private val context: Context, private val mapView: MapView) 
     }
 
     fun onGeocodeButtonClicked() {
+        if (!isDeviceConnected) {
+            showOfflineSearchOutOfScopeMessage()
+            return
+        }
+
         // Search for the location that belongs to an address and show it on the map.
         geocodeAnAddress()
+    }
+
+    private fun showOfflineSearchOutOfScopeMessage() {
+        showDialog(
+            "Offline Mode",
+            "Map storage in this app relies solely on caching, so offline maps are not yet loaded. While offline map support could be implemented, offline search is outside the scope of this app. For implementation details, see the OfflineMaps example app."
+        )
     }
 
     private fun searchExample() {

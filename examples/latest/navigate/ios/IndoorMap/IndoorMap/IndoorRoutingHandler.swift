@@ -128,7 +128,7 @@ public class IndoorRoutingHandler {
         arrival = IndoorWaypoint(coordinates: destination.center, venueId: destinationVenueModel.identifier, levelId: destinationLevel.identifier)
         viewController?.spinnerView.isHidden = false
         viewController?.startRotation()
-        
+
         routingEngine?.calculateRoute(from: departure!, to: arrival!, routeOptions: routeOptions) { error, routes in
             if error == nil, let routes = routes {
                 self.routingController?.showRoute(route: routes[0], style: self.routeStyle)

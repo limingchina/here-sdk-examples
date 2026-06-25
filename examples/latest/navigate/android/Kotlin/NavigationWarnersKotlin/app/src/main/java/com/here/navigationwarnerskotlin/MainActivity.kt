@@ -247,6 +247,17 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionsRequestor.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     private fun loadMapScene() {
         // Load a scene from the HERE SDK to render the map with a map scheme.
         mapView!!.mapScene.loadScene(MapScheme.NORMAL_DAY) { mapError ->

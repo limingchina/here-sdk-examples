@@ -24,6 +24,8 @@ import com.here.sdk.core.GeoCoordinates
 import com.here.sdk.core.Location
 import com.here.sdk.core.LocationListener
 import com.here.sdk.core.errors.InstantiationErrorException
+import com.here.sdk.core.Orientation
+import com.here.sdk.core.OrientationListener
 import com.here.sdk.location.LocationAccuracy
 import com.here.sdk.location.LocationEngine
 import com.here.sdk.location.LocationEngineStatus
@@ -46,6 +48,36 @@ class PositioningExample {
         LocationListener { location: Location ->
             updateMyLocationOnMap(location)
         }
+
+    private val orientationListener: OrientationListener = object : OrientationListener {
+        override fun onOrientationUpdated(orientation: Orientation) {
+            // Log available orientation values
+            val sb = StringBuilder("Orientation updated: ")
+            val frame = orientation.frame
+
+            if (frame != null) {
+                sb.append("frame=").append(frame.name)
+            }
+
+            if (orientation.heading != null) {
+                sb.append("heading=").append(orientation.heading)
+            }
+
+            if (orientation.pitch != null) {
+                sb.append("pitch=").append(orientation.pitch)
+            }
+
+            if (orientation.roll != null) {
+                sb.append("roll=").append(orientation.roll)
+            }
+
+            if (orientation.timestamp != null) {
+                sb.append("timestamp=").append(orientation.timestamp.toString())
+            }
+
+            Log.d(TAG, sb.toString())
+        }
+    }
 
     init {
         try {
@@ -99,6 +131,7 @@ class PositioningExample {
         locationEngine.addLocationStatusListener(locationStatusListener)
         locationEngine.addLocationIssueListener(locationIssueListener)
         locationEngine.addLocationListener(locationListener)
+        locationEngine.addOrientationListener(orientationListener)
         // By calling confirmHEREPrivacyNoticeInclusion() you confirm that this app informs on
         // data collection, which is done for this app via PositioningTermsAndPrivacyHelper,
         // which shows a possible example for this.
@@ -108,6 +141,7 @@ class PositioningExample {
 
     fun stopLocating() {
         locationEngine.removeLocationIssueListener(locationIssueListener)
+        locationEngine.removeOrientationListener(orientationListener)
         locationEngine.stop()
     }
 

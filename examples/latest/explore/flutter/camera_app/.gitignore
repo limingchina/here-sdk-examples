@@ -6,6 +6,13 @@
 .DS_Store
 .atom/
 .buildlog/
+/android/app/release
+/android/app/profile
+/android/app/debug
+/coverage/
+migrate_working_dir/
+.swiftpm/
+.build/
 .history
 .svn/
 .cxx/

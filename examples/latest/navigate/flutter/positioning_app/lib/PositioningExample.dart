@@ -20,7 +20,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Orientation;
 import 'package:flutter/services.dart';
 import 'package:here_sdk/core.dart';
 import 'package:here_sdk/core.engine.dart';
@@ -33,8 +33,8 @@ import 'PositioningTermsAndPrivacyHelper.dart';
 import 'main.dart';
 
 class PositioningExample extends State<MyApp>
-    with WidgetsBindingObserver
-    implements LocationListener, LocationStatusListener, LocationIssueListener {
+  with WidgetsBindingObserver
+  implements LocationListener, LocationStatusListener, LocationIssueListener, OrientationListener {
   static const String _notAvailable = "--";
   static const double _spacing = 8;
   static const double _padding = 20;
@@ -50,6 +50,11 @@ class PositioningExample extends State<MyApp>
   Location? _location;
   LocationEngineStatus? _status;
   List<LocationIssueType> _issues = <LocationIssueType>[];
+  String? _orientationFrame;
+  double? _orientationHeading;
+  double? _orientationPitch;
+  double? _orientationRoll;
+  int? _orientationTimestampMs;
   late final AppLifecycleListener _appLifecycleListener;
 
   @override
@@ -120,6 +125,12 @@ class PositioningExample extends State<MyApp>
                             _buildLabelValue('Speed.Accuracy:', _getSpeedAccuracyString()),
                             _buildLabelValue('Timestamp:', _location?.time.toString() ?? _notAvailable),
                             _buildLabelValue('SinceBoot:', _getTimestampSinceBootString()),
+                            const SizedBox(height: 6),
+                            _buildLabelValue('Orient.Frame:', _getOrientationFrame()),
+                            _buildLabelValue('Heading:', _getOrientationHeadingString()),
+                            _buildLabelValue('Pitch:', _getOrientationPitchString()),
+                            _buildLabelValue('Roll:', _getOrientationRollString()),
+                            _buildLabelValue('Orient.Timestamp:', _getOrientationTimestampString()),
                             _buildLabelValue(
                               'Issues:',
                               _issues.map((issue) => issue.toString().split('.').last).join(', '),
@@ -219,6 +230,8 @@ class PositioningExample extends State<MyApp>
     _locationEngine!.addLocationListener(this);
     _locationEngine!.addLocationStatusListener(this);
     _locationEngine!.addLocationIssueListener(this);
+    _locationEngine!.addOrientationListener(this);
+
     if (Platform.isAndroid) {
       // By calling confirmHEREPrivacyNoticeInclusion() you confirm that this app informs on
       // data collection on Android devices, which is done for this app via PositioningTermsAndPrivacyHelper,
@@ -232,6 +245,7 @@ class PositioningExample extends State<MyApp>
     _locationEngine!.removeLocationIssueListener(this);
     _locationEngine!.removeLocationStatusListener(this);
     _locationEngine!.removeLocationListener(this);
+    _locationEngine!.removeOrientationListener(this);
     _locationEngine!.stop();
   }
 
@@ -297,6 +311,47 @@ class PositioningExample extends State<MyApp>
   @override
   void onLocationIssueChanged(List<LocationIssueType> issues) {
     setState(() => _issues = issues);
+  }
+
+  @override
+  void onOrientationUpdated(Orientation orientation) {
+    setState(() {
+      if (orientation.frame != null) {
+        _orientationFrame = orientation.frame.toString().split('.').last;
+      }
+      if (orientation.heading != null) {
+        _orientationHeading = orientation.heading;
+      }
+      if (orientation.pitch != null) {
+        _orientationPitch = orientation.pitch;
+      }
+      if (orientation.roll != null) {
+        _orientationRoll = orientation.roll;
+      }
+      if (orientation.timestamp != null) {
+        _orientationTimestampMs = orientation.timestamp!.inMilliseconds;
+      }
+    });
+  }
+
+  String _getOrientationFrame() {
+    return _orientationFrame ?? _notAvailable;
+  }
+
+  String _getOrientationHeadingString() {
+    return _orientationHeading != null ? _orientationHeading!.toStringAsFixed(1) : _notAvailable;
+  }
+
+  String _getOrientationPitchString() {
+    return _orientationPitch != null ? _orientationPitch!.toStringAsFixed(1) : _notAvailable;
+  }
+
+  String _getOrientationRollString() {
+    return _orientationRoll != null ? _orientationRoll!.toStringAsFixed(1) : _notAvailable;
+  }
+
+  String _getOrientationTimestampString() {
+    return _orientationTimestampMs != null ? '${_orientationTimestampMs} ms' : _notAvailable;
   }
 
   Widget _buildLabelValue(String text, String value) {

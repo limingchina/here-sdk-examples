@@ -28,7 +28,7 @@ class RoutingExample {
     private let routingEngine: RoutingEngine
     private var startGeoCoordinates: GeoCoordinates?
     private var destinationGeoCoordinates: GeoCoordinates?
-    private var disableOptimization = true
+    private var trafficEnabled = true
     private var waypoints = [Waypoint]()
     private let timeUtils: TimeUtils
     private var currentRoute: Route?
@@ -99,7 +99,7 @@ class RoutingExample {
     }
 
     func updateTrafficOnRoute(route: Route?) {
-        guard !disableOptimization else {
+        guard trafficEnabled else {
             showDialog(title: "Traffic", message: "Disabled traffic optimization.")
             return
         }
@@ -210,13 +210,13 @@ class RoutingExample {
         
         // Disabled - Traffic optimization is completely disabled, including long-term road closures. It helps in producing stable routes.
         // Time dependent - Traffic optimization is enabled, the shape of the route will be adjusted according to the traffic situation which depends on departure time and arrival time.
-        routingOptions.routeOptions.trafficOptimizationMode = disableOptimization ? TrafficOptimizationMode.disabled : TrafficOptimizationMode.timeDependent
+        routingOptions.routeOptions.trafficOptimizationMode = trafficEnabled ? TrafficOptimizationMode.timeDependent : TrafficOptimizationMode.disabled
 
         return routingOptions
     }
     
     func toggleTrafficOptimization() {
-        disableOptimization = !disableOptimization
+        trafficEnabled = !trafficEnabled
         if !waypoints.isEmpty {
             calculateRoute(waypoints: waypoints)
         }

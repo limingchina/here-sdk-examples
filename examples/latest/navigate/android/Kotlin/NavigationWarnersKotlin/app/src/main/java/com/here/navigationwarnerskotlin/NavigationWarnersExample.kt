@@ -225,7 +225,7 @@ class NavigationWarnersExample(
         // Notifies on the progress along the route including maneuver instructions.
         visualNavigator.routeProgressListener =
             RouteProgressListener { routeProgress: RouteProgress ->
-                this@NavigationWarnersExample.currentRouteProgress = routeProgress
+                currentRouteProgress = routeProgress
 
                 // Contains the progress for the next maneuver ahead and the next-next maneuvers, if any.
                 val nextManeuverList = routeProgress.maneuverProgress

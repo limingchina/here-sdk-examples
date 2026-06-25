@@ -14,6 +14,7 @@
 		83C837CB2C20AAE50004F54E /* heresdk.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; };
 		83C837CC2C20AAE50004F54E /* heresdk.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		83C837D12C20EFA70004F54E /* CustomMapStylesExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C837D02C20EFA70004F54E /* CustomMapStylesExample.swift */; };
+		E025631F2FD7DEC400E0B96B /* custom-dark-style-neon-rds.zip in Resources */ = {isa = PBXBuildFile; fileRef = E025631E2FD7DEC400E0B96B /* custom-dark-style-neon-rds.zip */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -38,7 +39,7 @@
 		83C837C22C207F360004F54E /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		83C837CA2C20AAE50004F54E /* heresdk.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = heresdk.xcframework; sourceTree = "<group>"; };
 		83C837D02C20EFA70004F54E /* CustomMapStylesExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomMapStylesExample.swift; sourceTree = "<group>"; };
-		E04F9EFA2FB3452200DBB8D8 /* custom-dark-style-neon-rds.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; path = "custom-dark-style-neon-rds.zip"; sourceTree = "<group>"; };
+		E025631E2FD7DEC400E0B96B /* custom-dark-style-neon-rds.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; path = "custom-dark-style-neon-rds.zip"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,7 +57,7 @@
 		83C066BD2CC80307007A890F /* assets */ = {
 			isa = PBXGroup;
 			children = (
-				E04F9EFA2FB3452200DBB8D8 /* custom-dark-style-neon-rds.zip */,
+				E025631E2FD7DEC400E0B96B /* custom-dark-style-neon-rds.zip */,
 			);
 			path = assets;
 			sourceTree = "<group>";
@@ -166,6 +167,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E025631F2FD7DEC400E0B96B /* custom-dark-style-neon-rds.zip in Resources */,
 				83C837C32C207F360004F54E /* Preview Assets.xcassets in Resources */,
 				83C837C02C207F360004F54E /* Assets.xcassets in Resources */,
 			);

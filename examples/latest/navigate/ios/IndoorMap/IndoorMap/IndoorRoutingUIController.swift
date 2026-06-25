@@ -165,15 +165,9 @@ public class IndoorRoutingUIController: UIViewController {
         let selectedSpaceName = UILabel()
         selectedSpaceName.numberOfLines = 0
         selectedSpaceName.lineBreakMode = .byWordWrapping
-        let name = data.name
-        if(!name.isEmpty) {
-            selectedSpaceName.text = data.name + ", " + data.level.name
-        } else {
-            let center = data.center
-            let lat = String(format: "%.5f", center.latitude)
-            let lon = String(format: "%.5f", center.longitude)
-            selectedSpaceName.text = "\(lat), \(lon)" + ", " + data.level.name
-        }
+        var name = data.name.isEmpty ? data.identifier : data.name
+        name += ", " + data.level.name
+        selectedSpaceName.text = name
         
         selectedSpaceName.font = UIFont.systemFont(ofSize: 20, weight: .bold)
         selectedSpaceName.translatesAutoresizingMaskIntoConstraints = false
@@ -303,15 +297,9 @@ public class IndoorRoutingUIController: UIViewController {
         arrivalLable.font = UIFont.systemFont(ofSize: 17, weight: .medium)
         // Set arrival label text based on selectedSpace
         if let space = selectedArrivalGeometry {
-            let name = space.name
-            if(!name.isEmpty) {
-                arrivalLable.text = name + ", " + space.level.name
-            } else {
-                let center = space.center
-                let lat = String(format: "%.5f", center.latitude)
-                let lon = String(format: "%.5f", center.longitude)
-                arrivalLable.text = "Lat: \(lat), Lon: \(lon)"
-            }
+            var name = space.name.isEmpty ? space.identifier : space.name
+            name += ", " + space.level.name
+            arrivalLable.text = name
         }
         arrivalView.addSubview(arrivalIcon)
         arrivalView.addSubview(arrivalLable)
@@ -488,7 +476,6 @@ public class IndoorRoutingUIController: UIViewController {
     }
     
     func loadExpectedView() {
-        print("currentState: \(currentState)")
         switch currentState {
         case .ROUTING_CLOSED:
             spaceSelectionView.isHidden = true
@@ -567,7 +554,7 @@ public class IndoorRoutingUIController: UIViewController {
         ])
         // Load geometries from selectedVenue
         if let venue = selectedVenue {
-            allGeometries = venue.venueModel.geometriesByName
+            allGeometries = venue.venueModel.geometries
             filteredGeometries = allGeometries
             geometryTableView.reloadData()
         }
@@ -585,7 +572,8 @@ extension IndoorRoutingUIController: UITableViewDataSource, UITableViewDelegate 
         let geometry = filteredGeometries[indexPath.row]
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
-        cell.textLabel?.text = geometry.name + ", " + geometry.level.name
+        let name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+        cell.textLabel?.text = name + ", " + geometry.level.name
         cell.detailTextLabel?.text = geometry.internalAddress?.address
         return cell
     }
@@ -596,24 +584,12 @@ extension IndoorRoutingUIController: UITableViewDataSource, UITableViewDelegate 
         let geometry = filteredGeometries[indexPath.row]
         if spaceSelectionState == .SELECTING_DEPARTURE_SPACE {
             selectedDepartureGeometry = geometry
-            let name = geometry.name
-            if (!name.isEmpty){
-                departureLable.text = name + ", " + geometry.level.name
-            } else if let center = selectedDepartureGeometry?.center {
-                let lat = String(format: "%.5f", center.latitude)
-                let lon = String(format: "%.5f", center.longitude)
-                departureLable.text = "Lat: \(lat), Lon: \(lon)" + ", " + geometry.level.name
-            }
+            let name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+            departureLable.text = name + ", " + geometry.level.name
         } else {
             selectedArrivalGeometry = geometry
-            let name = geometry.name
-            if (!name.isEmpty){
-                arrivalLable.text = name + ", " + geometry.level.name
-            } else if let center = selectedArrivalGeometry?.center {
-                let lat = String(format: "%.5f", center.latitude)
-                let lon = String(format: "%.5f", center.longitude)
-                arrivalLable.text = "Lat: \(lat), Lon: \(lon)" + ", " + geometry.level.name
-            }
+            let name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+            arrivalLable.text = name + ", " + geometry.level.name
         }
         
         selectedVenue.selectedLevel = selectedDepartureGeometry!.level
@@ -635,7 +611,12 @@ extension IndoorRoutingUIController: UISearchBarDelegate {
         if searchText.isEmpty {
             filteredGeometries = allGeometries
         } else {
-            filteredGeometries = allGeometries.filter { $0.name.lowercased().contains(searchText.lowercased()) }
+            let searchTextLowercased = searchText.lowercased()
+            filteredGeometries = allGeometries.filter {
+                let spaceNameStr = $0.name.isEmpty ? $0.identifier : $0.name
+                return spaceNameStr.lowercased().contains(searchTextLowercased)
+                    || $0.level.name.lowercased().contains(searchTextLowercased)
+            }
         }
         geometryTableView.reloadData()
         searchBar.placeholder = "Search for spaces"

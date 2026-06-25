@@ -123,7 +123,7 @@ public class VenueTapHandler {
         venue.setCustomStyle(geometries: [geometry], style: geometryStyle, labelStyle: labelStyle)
 
         // Set a geometry name to the UILabel.
-        geometryLabel.text = geometry.name
+        geometryLabel.text = geometry.name.isEmpty ? geometry.identifier : geometry.name
 
         if center {
             mapView.camera.lookAt(point: geometry.center)

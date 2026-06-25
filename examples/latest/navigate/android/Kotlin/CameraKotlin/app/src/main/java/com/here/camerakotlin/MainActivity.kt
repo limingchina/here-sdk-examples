@@ -139,7 +139,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     @Composable
     fun CustomButton(onClick: () -> Unit, text: String) {
         val isDark = isSystemInDarkTheme()
@@ -196,7 +195,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-
     private fun initializeHERESDK() {
         // Set your credentials for the HERE SDK.
         val accessKeyID = "YOUR_ACCESS_KEY_ID"
@@ -223,6 +221,17 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Permissions denied by user.")
             }
         })
+    }
+
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionsRequestor.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun loadMapScene() {

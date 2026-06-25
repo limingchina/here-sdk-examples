@@ -265,7 +265,6 @@ class ViewController: UIViewController, UIGestureRecognizerDelegate, VenueInfoLi
     var venueMapList = [String]()
     var selectedVenue : String!
     var searchResult: [VenueGeometry] = []
-    var filterType: VenueGeometryFilterType = .name
     var venue: Venue?
     var structureNames: [String] = []
     var venueMap: VenueMap?
@@ -837,15 +836,8 @@ extension ViewController: TapDelegate {
                         if indoorSheet.currentState == .ROUTING_UI {
                             indoorSheet.selectedDepartureGeometry = geometry
                             indoorSheet.spaceSelectionState = .SELECTING_DEPARTURE_SPACE
-                            let name = geometry.name
-                            if(!name.isEmpty) {
-                                indoorSheet.departureLable.text = name + ", " + geometry.level.name
-                            } else {
-                                let center = geometry.center
-                                let lat = String(format: "%.5f", center.latitude)
-                                let lon = String(format: "%.5f", center.longitude)
-                                indoorSheet.departureLable.text = "Lat: \(lat), Lon: \(lon)" + ", " + geometry.level.name
-                            }
+                            let name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+                            indoorSheet.departureLable.text = name + ", " + geometry.level.name
                             venueTapHandler?.deselectGeometry()
                             indoorRoutingHandler.startRouting(source: indoorSheet.selectedDepartureGeometry!, destination: indoorSheet.selectedArrivalGeometry!)
                         } else {
@@ -913,7 +905,7 @@ extension ViewController: VenueSelectionDelegate {
                 moveToVenue = false
                 venue = venueEngine?.venueMap.selectedVenue
                 if let selectedVenue = venueEngine?.venueMap.selectedVenue {
-                    searchResult = selectedVenue.venueModel.geometriesByName
+                    searchResult = selectedVenue.venueModel.geometries
                     venueLoaded = true
                     customSearchBar.placeholder = " Search for Spaces"
                     structureSwitcher.isHidden = false
@@ -979,11 +971,12 @@ extension ViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if ((venueTapHandler?.isGeometryTapped) != false) {
             let cell = tableView.dequeueReusableCell(withIdentifier: "customCell") as! CustomCell
-            if (venueMap?.selectedVenue?.venueModel.topologies.isEmpty == true){
+            if (venueTapHandler?.selectedVenue?.venueModel.topologies.isEmpty == true) {
                 cell.indoor.image = UIImage(named: displaydata[2])
                  
                  if let geometry = venueTapHandler?.selectedGeometry {
-                 let name = geometry.name
+                 var name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+                 name += ", " + geometry.level.name
                  let attributedText = NSMutableAttributedString()
                  let nameAttributes: [NSAttributedString.Key: Any] = [
                  .font: UIFont.systemFont(ofSize: 20),
@@ -1028,7 +1021,8 @@ extension ViewController: UITableViewDelegate, UITableViewDataSource {
                 cell.indoor.image = UIImage(named: displaydata[2])
                 
                 let geometry = searchResult[indexPath.row]
-                let name = geometry.name + ", " + geometry.level.name
+                var name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+                name += ", " + geometry.level.name
                 let address = geometry.internalAddress?.address
                 
                 // Create an attributed string for the label text
@@ -1092,7 +1086,8 @@ extension ViewController: UITableViewDelegate, UITableViewDataSource {
                 cell.indoor.image = UIImage(named: displaydata[2])
                 
                 let geometry = searchResult[indexPath.row]
-                let name = geometry.name + ", " + geometry.level.name
+                var name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+                name = name + ", " + geometry.level.name
                 let address = geometry.internalAddress?.address
                 
                 // Create an attributed string for the label text
@@ -1290,9 +1285,14 @@ extension ViewController: UISearchBarDelegate {
             if let venue = self.venue {
                 let searchText = searchBar.text ?? ""
                 if !searchText.isEmpty {
-                    searchResult = venue.venueModel.filterGeometry(filter: searchText, filterType: filterType)
+                    let searchTextLowercased = searchText.lowercased()
+                    searchResult = venue.venueModel.geometries.filter {
+                        let spaceNameStr = $0.name.isEmpty ? $0.identifier : $0.name
+                        return spaceNameStr.lowercased().contains(searchTextLowercased)
+                            || $0.level.name.lowercased().contains(searchTextLowercased)
+                    }
                 } else {
-                    searchResult = venue.venueModel.geometriesByName
+                    searchResult = venue.venueModel.geometries
                 }
             } else {
                 searchResult = []

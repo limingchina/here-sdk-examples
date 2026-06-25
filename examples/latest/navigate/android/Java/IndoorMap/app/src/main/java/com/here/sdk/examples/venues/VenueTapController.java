@@ -25,12 +25,12 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.content.Context;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
@@ -38,6 +38,7 @@ import com.here.sdk.core.Anchor2D;
 import com.here.sdk.core.Color;
 import com.here.sdk.core.GeoCoordinates;
 import com.here.sdk.core.Point2D;
+import com.here.sdk.core.errors.InstantiationErrorException;
 import com.here.sdk.mapview.MapImage;
 import com.here.sdk.mapview.MapImageFactory;
 import com.here.sdk.mapview.MapMarker;
@@ -56,9 +57,7 @@ import com.here.sdk.venue.style.VenueLabelStyle;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 class SpaceSelectionHolder extends RecyclerView.ViewHolder{
 
@@ -88,7 +87,8 @@ class SpaceSelectionAdapter extends RecyclerView.Adapter<SpaceSelectionHolder> {
     @Override
     public void onBindViewHolder(@NonNull SpaceSelectionHolder holder, int position) {
         String spaceName, spaceAddress;
-        spaceName = geometry.getName() + ", " + geometry.getLevel().getName();
+        spaceName = geometry.getName().isEmpty() ? geometry.getIdentifier() : geometry.getName();
+        spaceName += ", " + geometry.getLevel().getName();
         spaceAddress = geometry.getInternalAddress() != null? geometry.getInternalAddress().getAddress() : "";
         holder.spaceName.setText(spaceName);
         holder.spaceAddress.setText(spaceAddress);
@@ -167,6 +167,7 @@ class TopologySelectionAdapter extends RecyclerView.Adapter<TopologySelectionHol
 }
 
 public class VenueTapController {
+    private static final String TAG = VenueTapController.class.getSimpleName();
     private static Color SELECTED_COLOR = Color.valueOf(0.282f, 0.733f, 0.96f);
     private static Color SELECTED_OUTLINE_COLOR = Color.valueOf(0.118f, 0.667f, 0.921f);
     private static Color SELECTED_TEXT_COLOR = Color.valueOf(1.0f, 1.0f, 1.0f);
@@ -207,7 +208,7 @@ public class VenueTapController {
         this.context = activity;
 
         // Get an image for MapMarker.
-        markerImage = MapImageFactory.fromResource(activity.getResources(), R.drawable.marker);
+        markerImage = getMapImageFromSvgFile();
         topologyID = activity.findViewById(R.id.topology_id);
         topologyLayout = activity.findViewById(R.id.topologyLayout);
         topologyRecycle = activity.findViewById(R.id.TopologyDirection);
@@ -258,23 +259,23 @@ public class VenueTapController {
         selectedGeometry = geometry;
 
         if (selectedVenue.getVenueModel().getTopologies().isEmpty()) {
-            // Put a marker on top of geometry.
-            marker = new MapMarker(position, markerImage, new Anchor2D(0.5f, 1f));
-            mapView.getMapScene().addMapMarker(marker);
-
-            if (!geometry.getName().isEmpty()) {
-                recyclerView.setAdapter(new SpaceSelectionAdapter(context, geometry));
-
-                // Estimated height of SpaceContent layout(space_selection.xml):
-                // - ImageView: 40dp height + 10dp top margin = 50dp
-                // - Vertical LinearLayout: wrap_content with 2 TextViews (approx. 24dp + 20dp) + 10dp margin = ~54dp
-                // Final estimated height ≈ max(50dp, 54dp) ≈ 60dp, (using max as height is set to wrap_content)
-                // Converted to pixels using device density:
-                int dp = 60;
-                float density = context.getResources().getDisplayMetrics().density;
-                int spaceContentHeight = Math.round(dp * density);
-                sheetBehavior.setPeekHeight(((MainActivity) context).getInitialPeekHeight() + spaceContentHeight);
+            if (geometry.getLookupType() == VenueGeometry.LookupType.ICON) {
+                // Put a marker on top of geometry.
+                marker = new MapMarker(position, markerImage, new Anchor2D(0.5f, 1f));
+                mapView.getMapScene().addMapMarker(marker);
             }
+
+            recyclerView.setAdapter(new SpaceSelectionAdapter(context, geometry));
+
+            // Estimated height of SpaceContent layout(space_selection.xml):
+            // - ImageView: 40dp height + 10dp top margin = 50dp
+            // - Vertical LinearLayout: wrap_content with 2 TextViews (approx. 24dp + 20dp) + 10dp margin = ~54dp
+            // Final estimated height ≈ max(50dp, 54dp) ≈ 60dp, (using max as height is set to wrap_content)
+            // Converted to pixels using device density:
+            int dp = 60;
+            float density = context.getResources().getDisplayMetrics().density;
+            int spaceContentHeight = Math.round(dp * density);
+            sheetBehavior.setPeekHeight(((MainActivity) context).getInitialPeekHeight() + spaceContentHeight);
         } else {
             // Highlight the selected space for routing.
             routingController.showSelectedSpace(geometry, position);
@@ -437,6 +438,17 @@ public class VenueTapController {
 
     public void setRoutingController(IndoorRoutingUIController routingController){
         this.routingController = routingController;
+    }
+
+    private MapImage getMapImageFromSvgFile() {
+        MapImage markerImage;
+        try {
+            markerImage = MapImageFactory.fromFile("indoor_route_end.svg", 100, 100);
+            return markerImage;
+        } catch (InstantiationErrorException e) {
+            Log.e(TAG, "Map Image creation from SVG failed for feature:" + "indoor_route_end.svg");
+        }
+        return null;
     }
 
     private final VenueSelectionListener venueSelectionListener =

@@ -102,6 +102,11 @@ public class SearchExample {
     }
 
     public void onSearchButtonClicked() {
+        if (!isDeviceConnected()) {
+            showOfflineSearchOutOfScopeMessage();
+            return;
+        }
+
         // Search for "Pizza" and show the results on the map.
         searchExample();
 
@@ -110,8 +115,19 @@ public class SearchExample {
     }
 
     public void onGeocodeButtonClicked() {
+        if (!isDeviceConnected()) {
+            showOfflineSearchOutOfScopeMessage();
+            return;
+        }
+
         // Search for the location that belongs to an address and show it on the map.
         geocodeAnAddress();
+    }
+
+    private void showOfflineSearchOutOfScopeMessage() {
+        showDialog(
+                "Offline Mode",
+                "Map storage in this app relies solely on caching, so offline maps are not yet loaded. While offline map support could be implemented, offline search is outside the scope of this app. For implementation details, see the OfflineMaps example app.");
     }
 
     private void searchExample() {

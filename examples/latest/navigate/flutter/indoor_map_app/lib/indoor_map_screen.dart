@@ -363,7 +363,9 @@ class _IndoorMapScreenState extends State<IndoorMapScreen> {
               ? _venueNameForId(_venueMap.selectedVenue!.venueModel.identifier)
               : 'Indoor Maps',
         ),
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _handleBackPress),
+        leading: venueLoadedOnMap
+            ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: _handleBackPress)
+            : null,
         actions: isTopologyPresent
             ? <Widget>[
                 IconButton(
