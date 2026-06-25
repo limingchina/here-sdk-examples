@@ -53,7 +53,8 @@ public class SpaceAdapter extends RecyclerView.Adapter<SpaceViewHolder> {
     public void onBindViewHolder(@NonNull SpaceViewHolder holder, int position) {
         String spaceName, spaceAddress;
         VenueGeometry geometry = items.get(position);
-        spaceName = geometry.getName() + ", " + geometry.getLevel().getName();
+        spaceName = geometry.getName().isEmpty() ? geometry.getIdentifier() : geometry.getName();
+        spaceName +=  ", " + geometry.getLevel().getName();
         spaceAddress = geometry.getInternalAddress() != null ? geometry.getInternalAddress().getAddress() : "";
         holder.spaceName.setText(spaceName);
         if(spaceAddress.isEmpty())

@@ -52,7 +52,6 @@ import com.here.traffickotlin.ui.theme.TrafficTheme
 
 class MainActivity : ComponentActivity() {
 
-
     private val environmentLogger = EnvironmentLogger()
     private lateinit var permissionsRequestor: PermissionsRequestor
     private var mapView: MapView? = null
@@ -179,6 +178,17 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Permissions denied by user.")
             }
         })
+    }
+
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionsRequestor.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun loadMapScene() {

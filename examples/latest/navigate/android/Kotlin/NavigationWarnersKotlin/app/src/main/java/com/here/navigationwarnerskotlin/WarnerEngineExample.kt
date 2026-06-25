@@ -20,6 +20,7 @@
 package com.here.navigationwarnerskotlin
 
 import android.util.Log
+import com.here.sdk.mapdata.SegmentDataLoaderOptions
 import com.here.sdk.navigation.AspectRatio
 import com.here.sdk.navigation.BorderCrossingWarningOptions
 import com.here.sdk.navigation.DistanceType
@@ -30,8 +31,8 @@ import com.here.sdk.navigation.SafetyCameraWarningOptions
 import com.here.sdk.navigation.SchoolZoneWarningOptions
 import com.here.sdk.navigation.VisualNavigator
 import com.here.sdk.navigation.WarningType
-import com.here.sdk.warner.Warning
 import com.here.sdk.warner.WarnerEngine
+import com.here.sdk.warner.Warning
 import com.here.sdk.warner.WarningListener
 import com.here.sdk.warner.WarningOptions
 import com.here.sdk.warner.WarningsRegistry
@@ -50,6 +51,7 @@ class WarnerEngineExample {
 
     private lateinit var warnerEngine: WarnerEngine
     private lateinit var warningsRegistry: WarningsRegistry
+    private val speedBumpWarningProvider: SpeedBumpWarningProvider = SpeedBumpWarningProvider()
 
     // Sets up the WarnerEngine obtained from the given VisualNavigator.
     // The WarnerEngine provides a unified approach to handle navigation warnings:
@@ -72,6 +74,9 @@ class WarnerEngineExample {
         // Configure notification distances for specific warning types.
         configureNotificationDistances()
 
+        // Register custom warning providers before enabling warnings.
+        registerCustomProvider()
+
         // Required: setEnabledWarnings() must be called to receive any warnings at all.
         // Without this call, no warnings will be delivered to the WarningListener.
         // Pass the list of WarningType values you want to receive.
@@ -87,6 +92,14 @@ class WarnerEngineExample {
         })
 
         Log.d(TAG, "WarnerEngine setup complete. Listening for unified warning events.")
+    }
+
+    // Registers custom warning providers with the WarnerEngine before enabling warnings.
+    private fun registerCustomProvider() {
+        val segmentDataLoaderOptions = SegmentDataLoaderOptions()
+        // Load per-segment "special speed situations" (e.g. speed-bump presence and offsets) so the provider can detect and compute distances.
+        segmentDataLoaderOptions.loadSpecialSpeedSituations = true
+        warnerEngine.addCustomWarningProvider(speedBumpWarningProvider, segmentDataLoaderOptions)
     }
 
     // Configures all warning options through the WarnerEngine's WarningOptions.
@@ -159,7 +172,8 @@ class WarnerEngineExample {
             WarningType.LOW_SPEED_ZONE,
             WarningType.TRAFFIC_MERGE,
             WarningType.TOLL_STOP,
-            WarningType.LANE_DECREASE
+            WarningType.LANE_DECREASE,
+            WarningType.CUSTOM
         )
         warnerEngine.setEnabledWarnings(enabledWarnings)
     }
@@ -179,7 +193,24 @@ class WarnerEngineExample {
             WarningType.REALISTIC_VIEW -> handleRealisticViewWarning(warning)
             WarningType.TOLL_STOP -> handleTollStopWarning(warning)
             WarningType.TRAFFIC_MERGE -> handleTrafficMergeWarning(warning)
+            WarningType.CUSTOM -> handleCustomWarning(warning)
             else -> Log.d(TAG, "Unhandled warning type: ${warning.warningType.name}, distance type: ${warning.distanceType.name}")
+        }
+    }
+
+    // Handles custom speed bumps warnings provided by the SpeedBumpWarningProvider.
+    private fun handleCustomWarning(warning: Warning) {
+        val customWarning = warningsRegistry.getCustomWarning(warning)
+        if (customWarning == null) {
+            Log.d(TAG, "CustomWarning: No detailed data available.")
+            return
+        }
+        if (customWarning.customWarningType == SpeedBumpWarningProvider.SPEED_BUMP_WARNING_ID) {
+            val segRef = speedBumpWarningProvider.getSegmentReference(customWarning)
+            Log.d(TAG, "Speed bump " + (if (warning.distanceType == DistanceType.AHEAD) "ahead" else "passed")
+                    + ". segmentRef=" + segRef)
+        } else {
+            Log.d(TAG, "Unsupported custom warning type: " + customWarning.customWarningType)
         }
     }
 

@@ -9,23 +9,24 @@
 /* Begin PBXBuildFile section */
 		450EF2492E33AA5300FC2624 /* NavigationWarnersExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450EF2482E33AA5300FC2624 /* NavigationWarnersExample.swift */; };
 		457EAD402F8643C60074BF61 /* WarnerEngineExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457EAD3F2F8643C60074BF61 /* WarnerEngineExample.swift */; };
+		457EAD412F8643C60074BF61 /* SpeedBumpWarningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457EAD422F8643C60074BF61 /* SpeedBumpWarningProvider.swift */; };
 		83C837BC2C207F340004F54E /* NavigationWarnersApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C837BB2C207F340004F54E /* NavigationWarnersApp.swift */; };
 		83C837BE2C207F340004F54E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C837BD2C207F340004F54E /* ContentView.swift */; };
 		83C837C02C207F360004F54E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 83C837BF2C207F360004F54E /* Assets.xcassets */; };
 		83C837C32C207F360004F54E /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 83C837C22C207F360004F54E /* Preview Assets.xcassets */; };
-		83C837CB2C20AAE50004F54E /* heresdk.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; };
-		83C837CC2C20AAE50004F54E /* heresdk.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		83C837D12C20EFA70004F54E /* NavigationWarners.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C837D02C20EFA70004F54E /* NavigationWarners.swift */; };
+		E0C82A852FE53821003FCC53 /* heresdk.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; };
+		E0C82A862FE53821003FCC53 /* heresdk.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 83C837CA2C20AAE50004F54E /* heresdk.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		83C837CD2C20AAE50004F54E /* Embed Frameworks */ = {
+		E0C82A872FE53821003FCC53 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				83C837CC2C20AAE50004F54E /* heresdk.xcframework in Embed Frameworks */,
+				E0C82A862FE53821003FCC53 /* heresdk.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -35,6 +36,7 @@
 /* Begin PBXFileReference section */
 		450EF2482E33AA5300FC2624 /* NavigationWarnersExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationWarnersExample.swift; sourceTree = "<group>"; };
 		457EAD3F2F8643C60074BF61 /* WarnerEngineExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarnerEngineExample.swift; sourceTree = "<group>"; };
+		457EAD422F8643C60074BF61 /* SpeedBumpWarningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeedBumpWarningProvider.swift; sourceTree = "<group>"; };
 		83C837B82C207F340004F54E /* NavigationWarners.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NavigationWarners.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		83C837BB2C207F340004F54E /* NavigationWarnersApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationWarnersApp.swift; sourceTree = "<group>"; };
 		83C837BD2C207F340004F54E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -49,7 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				83C837CB2C20AAE50004F54E /* heresdk.xcframework in Frameworks */,
+				E0C82A852FE53821003FCC53 /* heresdk.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +83,7 @@
 				450EF2482E33AA5300FC2624 /* NavigationWarnersExample.swift */,
 				83C837D02C20EFA70004F54E /* NavigationWarners.swift */,
 				457EAD3F2F8643C60074BF61 /* WarnerEngineExample.swift */,
+				457EAD422F8643C60074BF61 /* SpeedBumpWarningProvider.swift */,
 				83C837BF2C207F360004F54E /* Assets.xcassets */,
 				83C837C12C207F360004F54E /* Preview Content */,
 			);
@@ -113,7 +116,7 @@
 				83C837B42C207F340004F54E /* Sources */,
 				83C837B52C207F340004F54E /* Frameworks */,
 				83C837B62C207F340004F54E /* Resources */,
-				83C837CD2C20AAE50004F54E /* Embed Frameworks */,
+				E0C82A872FE53821003FCC53 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -178,6 +181,7 @@
 				450EF2492E33AA5300FC2624 /* NavigationWarnersExample.swift in Sources */,
 				83C837BC2C207F340004F54E /* NavigationWarnersApp.swift in Sources */,
 				457EAD402F8643C60074BF61 /* WarnerEngineExample.swift in Sources */,
+				457EAD412F8643C60074BF61 /* SpeedBumpWarningProvider.swift in Sources */,
 				83C837D12C20EFA70004F54E /* NavigationWarners.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

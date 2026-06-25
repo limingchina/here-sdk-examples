@@ -168,9 +168,9 @@ public class MainActivity extends AppCompatActivity {
         UnitButton unitButton = (UnitButton) view;
         boolean status = routingExample.toggleTrafficOptimization();
         if (status){
-            unitButton.setText("Traffic optimization: Off");
-        } else {
             unitButton.setText("Traffic optimization: On");
+        } else {
+            unitButton.setText("Traffic optimization: Off");
         }
     }
 

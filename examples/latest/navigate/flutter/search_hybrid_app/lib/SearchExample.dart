@@ -38,7 +38,7 @@ class SearchExample {
   List<MapMarker> _mapMarkerList = [];
   late SearchEngine _onlineSearchEngine;
   late OfflineSearchEngine _offlineSearchEngine;
-  bool useOnlineSearchEngine = true;
+  bool isDeviceConnected = true;
   ShowDialogFunction _showDialog;
 
   SearchExample(ShowDialogFunction showDialogCallback, HereMapController hereMapController)
@@ -69,6 +69,11 @@ class SearchExample {
   }
 
   Future<void> searchButtonClicked() async {
+    if (!isDeviceConnected) {
+      _showOfflineSearchOutOfScopeMessage();
+      return;
+    }
+
     // Search for "Pizza" and show the results on the map.
     _searchExample();
 
@@ -77,18 +82,30 @@ class SearchExample {
   }
 
   Future<void> geocodeAnAddressButtonClicked() async {
+    if (!isDeviceConnected) {
+      _showOfflineSearchOutOfScopeMessage();
+      return;
+    }
+
     // Search for the location that belongs to an address and show it on the map.
     _geocodeAnAddress();
   }
 
-  void useOnlineSearchEngineButtonClicked() {
-    useOnlineSearchEngine = true;
+  void _showOfflineSearchOutOfScopeMessage() {
+    _showDialog(
+      'Offline Mode',
+      'Map storage in this app relies solely on caching, so offline maps are not yet loaded. While offline map support could be implemented, offline search is outside the scope of this app. For implementation details, see the OfflineMaps example app.',
+    );
+  }
+
+  void onSwitchOnlineButtonClicked() {
+    isDeviceConnected = true;
 
     _showDialog('Switched to SearchEngine', 'Requests will be calculated online.');
   }
 
-  void useOfflineSearchEngineButtonClicked() {
-    useOnlineSearchEngine = false;
+  void onSwitchOfflineButtonClicked() {
+    isDeviceConnected = false;
 
     // Note that this app does not show how to download offline maps. For this, check the offline_maps_app example.
     _showDialog(
@@ -141,7 +158,7 @@ class SearchExample {
     reverseGeocodingOptions.languageCode = LanguageCode.enGb;
     reverseGeocodingOptions.maxItems = 1;
 
-    if (useOnlineSearchEngine) {
+    if (isDeviceConnected) {
       _onlineSearchEngine.searchByCoordinates(geoCoordinates, reverseGeocodingOptions, (
         SearchError? searchError,
         List<Place>? list,
@@ -229,7 +246,7 @@ class SearchExample {
     searchOptions.languageCode = LanguageCode.enUs;
     searchOptions.maxItems = 30;
 
-    if (useOnlineSearchEngine) {
+    if (isDeviceConnected) {
       _onlineSearchEngine.searchByText(query, searchOptions, (SearchError? searchError, List<Place>? list) async {
         _handleSearchResults(searchError, list, queryString);
       });
@@ -276,7 +293,7 @@ class SearchExample {
 
     TextQueryArea queryArea = TextQueryArea.withCenter(centerGeoCoordinates);
 
-    if (useOnlineSearchEngine) {
+    if (isDeviceConnected) {
       // Simulate a user typing a search term.
       _onlineSearchEngine.suggestByText(
         TextQuery.withArea(
@@ -377,7 +394,7 @@ class SearchExample {
     geocodingOptions.languageCode = LanguageCode.deDe;
     geocodingOptions.maxItems = 30;
 
-    if (useOnlineSearchEngine) {
+    if (isDeviceConnected) {
       _onlineSearchEngine.searchByAddress(query, geocodingOptions, (SearchError? searchError, List<Place>? list) async {
         _handleGeocodingResults(searchError, list, queryString);
       });

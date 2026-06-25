@@ -22,7 +22,6 @@
 
 # This is to fix a known bug in Android Gradle Plugin, see https://issuetracker.google.com/issues/282544776
 # With newer versions of the Android Gradle Plugin a build might fail with an error, otherwise.
-#
 -dontwarn com.here.sdk.R$id
 -dontwarn com.here.sdk.R$layout
 -dontwarn com.here.sdk.R$string

@@ -7,6 +7,7 @@
 .atom/
 .build/
 .buildlog/
+/coverage/
 .history
 .svn/
 .cxx/

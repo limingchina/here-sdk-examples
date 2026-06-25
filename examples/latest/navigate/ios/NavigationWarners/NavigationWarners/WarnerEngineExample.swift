@@ -33,6 +33,7 @@ class WarnerEngineExample: WarningDelegate {
 
     private var warnerEngine: WarnerEngine!
     private var warningsRegistry: WarningsRegistry!
+    private let speedBumpWarningProvider = SpeedBumpWarningProvider()
 
     // Sets up the WarnerEngine obtained from the given VisualNavigator.
     // The WarnerEngine provides a unified approach to handle navigation warnings:
@@ -54,6 +55,9 @@ class WarnerEngineExample: WarningDelegate {
 
         // Configure notification distances for specific warning types.
         configureNotificationDistances()
+
+        // Register custom warning providers before enabling warnings.
+        registerCustomProvider()
 
         // Required: setEnabledWarnings() must be called to receive any warnings at all.
         // Without this call, no warnings will be delivered to the WarningDelegate.
@@ -130,6 +134,26 @@ class WarnerEngineExample: WarningDelegate {
         _ = warnerEngine.setWarningNotificationDistances(warningType: .roadSign, warningNotificationDistances: roadSignDistances)
     }
 
+    // Registers custom warning providers with the WarnerEngine before enabling warnings.
+    private func registerCustomProvider() {
+        var segmentDataLoaderOptions = SegmentDataLoaderOptions()
+        // Load per-segment "special speed situations" so the provider can detect speed bumps.
+        segmentDataLoaderOptions.loadSpecialSpeedSituations = true
+        warnerEngine.addCustomWarningProvider(customWarningProvider: speedBumpWarningProvider,
+                                              segmentDataLoaderOptions: segmentDataLoaderOptions)
+
+        // Configure notification distances for custom speed bump warnings.
+        // These determine how far ahead (in meters) the AHEAD warning fires, based on current speed.
+        var customDistances = warnerEngine.getCustomWarningNotificationDistances(
+            customWarningType: SpeedBumpWarningProvider.speedBumpWarningID)
+        customDistances.slowSpeedDistanceInMeters = 500
+        customDistances.regularSpeedDistanceInMeters = 750
+        customDistances.fastSpeedDistanceInMeters = 1500
+        _ = warnerEngine.setCustomWarningNotificationDistances(
+            customWarningType: SpeedBumpWarningProvider.speedBumpWarningID,
+            warningNotificationDistances: customDistances)
+    }
+
     // Required: setEnabledWarnings() must be called to receive any warnings at all.
     // Without this call, no warnings will be delivered, regardless of a registered WarningDelegate.
     // Only the warning types in the list below will be delivered. Remove a type to suppress it.
@@ -146,7 +170,8 @@ class WarnerEngineExample: WarningDelegate {
             .lowSpeedZone,
             .trafficMerge,
             .tollStop,
-            .laneDecrease
+            .laneDecrease,
+            .custom
         ]
         warnerEngine.setEnabledWarnings(warningTypes: enabledWarnings)
     }
@@ -176,6 +201,8 @@ class WarnerEngineExample: WarningDelegate {
             handleTollStopWarning(warning)
         case .trafficMerge:
             handleTrafficMergeWarning(warning)
+        case .custom:
+            handleCustomWarning(warning)
         default:
             print("Unhandled warning type: \(warning.warningType), distance type: \(warning.distanceType)")
         }
@@ -414,6 +441,23 @@ class WarnerEngineExample: WarningDelegate {
             print("TrafficMerge: \(trafficMergeWarning.roadType) passed.")
         default:
             break
+        }
+    }
+
+    // Handles custom warnings delivered by the WarnerEngine.
+    // Decode the CustomWarning from the WarningsRegistry and check its customWarningType.
+    private func handleCustomWarning(_ warning: Warning) {
+        guard let customWarning = warningsRegistry.getCustomWarning(warning: warning) else {
+            print("CustomWarning: No detailed data available.")
+            return
+        }
+        if customWarning.customWarningType == SpeedBumpWarningProvider.speedBumpWarningID {
+            let segRef = speedBumpWarningProvider.getSegmentReference(customWarning) ?? "unknown"
+            // The WarnerEngine provides distanceType (ahead/passed) based on startOffsetInMeters.
+            let status = warning.distanceType == .ahead ? "ahead" : "passed"
+            print("Speed bump \(status). segmentRef=\(segRef)")
+        } else {
+            print("Unsupported custom warning type: \(customWarning.customWarningType)")
         }
     }
 

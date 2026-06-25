@@ -398,7 +398,7 @@ public class IndoorRoutingUIController {
             selectedVenue = venueMap.getSelectedVenue();
             if (selectedVenue != null) {
                 VenueModel venueModel = selectedVenue.getVenueModel();
-                geometryList = venueModel.getGeometriesByName();
+                geometryList = venueModel.getGeometries();
             } else {
                 geometryList = null;
             }
@@ -432,6 +432,7 @@ public class IndoorRoutingUIController {
     public void showSelectedSpace(VenueGeometry geometry, GeoCoordinates position) {
         currentState = State.SPACE_SELECTION_DETAILS;
         isRouteRenderedOnMap = false;
+        ((MainActivity)context).showProgressBarOnMap(false);
         controller.hideRoute();
         switchView(viewSelectedPlacesDetails);
 
@@ -456,14 +457,9 @@ public class IndoorRoutingUIController {
         spaceAddressHolder = viewSelectedPlacesDetails.findViewById(R.id.SpaceAddressHolder);
         directionButton = viewSelectedPlacesDetails.findViewById(R.id.spaceSelectionDirectionBtn);
         cancelBtn = viewSelectedPlacesDetails.findViewById(R.id.spaceSelectionCancelBtn);
-        // TODO: Add Space Type as well once spaceType api is exposed.
         String spaceNameStr = "";
         String spaceAddressStr = "";
-        if (!geometry.getName().isEmpty()) {
-            spaceNameStr = geometry.getName();
-        } else {
-            spaceNameStr = position.latitude + ", " + position.longitude;
-        }
+        spaceNameStr = geometry.getName().isEmpty() ? geometry.getIdentifier() : geometry.getName();
         spaceNameStr += ", " + geometry.getLevel().getName();
         spaceAddressStr = geometry.getInternalAddress() != null ? geometry.getInternalAddress().getAddress() : "";
         spaceName.setText(spaceNameStr);
@@ -513,13 +509,7 @@ public class IndoorRoutingUIController {
         cancelBtn.setOnClickListener(v -> handleBackPressed());
 
         if (selectedSourceGeometry != null) {
-            String spaceNameStr;
-            // TODO: Add Space Type as well once spaceType api is exposed.
-            if(!selectedSourceGeometry.getName().isEmpty()) {
-                spaceNameStr = selectedSourceGeometry.getName();
-            } else {
-                spaceNameStr = srcPosition.latitude + ", " + srcPosition.longitude;
-            }
+            String spaceNameStr = selectedSourceGeometry.getName().isEmpty() ? selectedSourceGeometry.getIdentifier() : selectedSourceGeometry.getName();
             spaceNameStr += ", " + selectedSourceGeometry.getLevel().getName();
             routeSource.setText(spaceNameStr);
         } else {
@@ -527,13 +517,7 @@ public class IndoorRoutingUIController {
         }
 
         if (selectedDestinationGeometry != null) {
-            // TODO: Add Space Type as well  once spaceType api is exposed.
-            String spaceNameStr;
-            if(!selectedDestinationGeometry.getName().isEmpty()) {
-                spaceNameStr = selectedDestinationGeometry.getName();
-            } else {
-                spaceNameStr = dstPosition.latitude + ", " + dstPosition.longitude;
-            }
+            String spaceNameStr = selectedDestinationGeometry.getName().isEmpty() ? selectedDestinationGeometry.getIdentifier() : selectedDestinationGeometry.getName();
             spaceNameStr += ", " + selectedDestinationGeometry.getLevel().getName();
             routeDestination.setText(spaceNameStr);
         }
@@ -563,9 +547,10 @@ public class IndoorRoutingUIController {
             routingEngine.calculateRoute(srcWayPoint, dstWayPoint, routeOptions, this::showRouteInMap);
             Log.d(TAG, "Route calculation called with Source[levelId: " + srcWayPoint.getLevelId()
                     + ", latitude:" + srcWayPoint.getCoordinates().latitude + ", longitude:"
-                    + srcWayPoint.getCoordinates().longitude + "]" + ", Destination[levelId:"
-                    + dstWayPoint.getLevelId() + ", latitude:" + dstWayPoint.getCoordinates().latitude
-                    + ", longitude:" + dstWayPoint.getCoordinates().longitude + "]");
+                    + srcWayPoint.getCoordinates().longitude + ", levelName: " + selectedSourceGeometry.getLevel().getShortName()
+                    + "]" + ", Destination[levelId:" + dstWayPoint.getLevelId() + ", latitude:"
+                    + dstWayPoint.getCoordinates().latitude + ", longitude:" + dstWayPoint.getCoordinates().longitude
+                    + ", levelName:" + selectedDestinationGeometry.getLevel().getShortName() + "]");
         }
     }
 
@@ -582,10 +567,16 @@ public class IndoorRoutingUIController {
             final List<Route> routeList) {
         ((MainActivity)context).showProgressBarOnMap(false);
         controller.hideRoute();
+
+        // Route calculation happens in async mode, so if user has already closed the UI, no need to render it.
+        if (currentState == State.HIDDEN || currentState == State.SPACE_SELECTION_DETAILS) {
+            return;
+        }
+
         if (routingError == null && routeList != null) {
             Route route = routeList.get(0);
             // check If length came as 0 it means same source and destination
-            Log.d(TAG, "Route Calculation Error Msg: " + route.getLengthInMeters());
+            Log.d(TAG, "Route Calculated with total Length: " + route.getLengthInMeters());
             if (route.getLengthInMeters() <= 0) {
                 String errorMsg = "Selected Source and Destination are same. Please select different"
                         + " source and destination points.";
@@ -669,6 +660,7 @@ public class IndoorRoutingUIController {
      */
     public void showSpaceSelectionList(boolean isSource) {
         currentState = State.SPACE_SELECTION_LIST;
+        ((MainActivity)context).showProgressBarOnMap(false);
         switchView(viewSpaceSelectionList);
         applyTopInsetsToRoutingBottomSheet(true);
 
@@ -715,7 +707,8 @@ public class IndoorRoutingUIController {
         recyclerView.setAdapter(null);
         List<VenueGeometry> list = new ArrayList<>();
         for(VenueGeometry geometry : geometryList) {
-            if(geometry.getName().toLowerCase().contains(s.toLowerCase()) || geometry.getLevel().getName().toLowerCase().contains(s.toLowerCase())
+            String spaceName = geometry.getName().isEmpty() ? geometry.getIdentifier() : geometry.getName();
+            if (spaceName.toLowerCase().contains(s.toLowerCase()) || geometry.getLevel().getName().toLowerCase().contains(s.toLowerCase())
                     || (geometry.getInternalAddress() != null ? geometry.getInternalAddress().getAddress() : "").toLowerCase().contains(s.toLowerCase())) {
                 list.add(geometry);
             }

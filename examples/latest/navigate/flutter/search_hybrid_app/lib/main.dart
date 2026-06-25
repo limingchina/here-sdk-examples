@@ -127,11 +127,11 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _onlineButtonClicked() {
-    _searchExample?.useOnlineSearchEngineButtonClicked();
+    _searchExample?.onSwitchOnlineButtonClicked();
   }
 
   void _offlineButtonClicked() {
-    _searchExample?.useOfflineSearchEngineButtonClicked();
+    _searchExample?.onSwitchOfflineButtonClicked();
   }
 
   @override

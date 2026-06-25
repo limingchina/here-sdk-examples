@@ -23,6 +23,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.here.sdk.mapdata.SegmentDataLoaderOptions;
 import com.here.sdk.navigation.AspectRatio;
 import com.here.sdk.navigation.BorderCrossingWarning;
 import com.here.sdk.navigation.BorderCrossingWarningOptions;
@@ -53,11 +54,12 @@ import com.here.sdk.navigation.WarningType;
 import com.here.sdk.navigation.WeightRestrictionType;
 import com.here.sdk.routing.PaymentMethod;
 import com.here.sdk.transport.GeneralVehicleSpeedLimits;
-import com.here.sdk.warner.Warning;
+import com.here.sdk.warner.CustomWarning;
 import com.here.sdk.warner.WarnerEngine;
 import com.here.sdk.warner.WarningListener;
 import com.here.sdk.warner.WarningOptions;
 import com.here.sdk.warner.WarningsRegistry;
+import com.here.sdk.warner.Warning;
 
 import java.util.Arrays;
 import java.util.Date;
@@ -77,6 +79,7 @@ public class WarnerEngineExample {
 
     private WarnerEngine warnerEngine;
     private WarningsRegistry warningsRegistry;
+    private final SpeedBumpWarningProvider speedBumpWarningProvider = new SpeedBumpWarningProvider();
 
     // Sets up the WarnerEngine obtained from the given VisualNavigator.
     // The WarnerEngine provides a unified approach to handle navigation warnings:
@@ -99,6 +102,9 @@ public class WarnerEngineExample {
         // Configure notification distances for specific warning types.
         configureNotificationDistances();
 
+        // Register custom warning providers before enabling warnings.
+        registerCustomProvider();
+
         // Required: setEnabledWarnings() must be called to receive any warnings at all.
         // Without this call, no warnings will be delivered to the WarningListener.
         // Pass the list of WarningType values you want to receive.
@@ -117,6 +123,14 @@ public class WarnerEngineExample {
         });
 
         Log.d(TAG, "WarnerEngine setup complete. Listening for unified warning events.");
+    }
+
+    // Registers custom warning providers with the WarnerEngine before enabling warnings.
+    private void registerCustomProvider() {
+        SegmentDataLoaderOptions segmentDataLoaderOptions = new SegmentDataLoaderOptions();
+        // Load per-segment "special speed situations" (e.g. speed-bump presence and offsets) so the provider can detect and compute distances.
+        segmentDataLoaderOptions.loadSpecialSpeedSituations = true;
+        warnerEngine.addCustomWarningProvider(speedBumpWarningProvider, segmentDataLoaderOptions);
     }
 
     // Configures all warning options through the WarnerEngine's WarningOptions.
@@ -175,7 +189,8 @@ public class WarnerEngineExample {
                 WarningType.LOW_SPEED_ZONE,
                 WarningType.TRAFFIC_MERGE,
                 WarningType.TOLL_STOP,
-                WarningType.LANE_DECREASE
+                WarningType.LANE_DECREASE,
+                WarningType.CUSTOM
         );
         warnerEngine.setEnabledWarnings(enabledWarnings);
     }
@@ -228,6 +243,9 @@ public class WarnerEngineExample {
                 break;
             case TRAFFIC_MERGE:
                 handleTrafficMergeWarning(warning);
+                break;
+            case CUSTOM:
+                handleCustomWarning(warning);
                 break;
             default:
                 Log.d(TAG, "Unhandled warning type: " + warning.warningType.name()
@@ -474,6 +492,22 @@ public class WarnerEngineExample {
                     + ", with lanes = " + trafficMergeWarning.laneCount);
         } else if (warning.distanceType == DistanceType.PASSED) {
             Log.d(TAG, "TrafficMerge: " + trafficMergeWarning.roadType.name() + " passed.");
+        }
+    }
+
+    // Handles custom speed bumps warnings provided by the SpeedBumpWarningProvider.
+    private void handleCustomWarning(Warning warning) {
+        CustomWarning customWarning = warningsRegistry.getCustomWarning(warning);
+        if (customWarning == null) {
+            Log.d(TAG, "CustomWarning: No detailed data available.");
+            return;
+        }
+        if (customWarning.customWarningType == SpeedBumpWarningProvider.SPEED_BUMP_WARNING_ID) {
+            String segRef = speedBumpWarningProvider.getSegmentReference(customWarning);
+            Log.d(TAG, "Speed bump " + (warning.distanceType == DistanceType.AHEAD ? "ahead" : "passed")
+                    + ". segmentRef=" + segRef);
+        } else {
+            Log.d(TAG, "Unsupported custom warning type: " + customWarning.customWarningType);
         }
     }
 

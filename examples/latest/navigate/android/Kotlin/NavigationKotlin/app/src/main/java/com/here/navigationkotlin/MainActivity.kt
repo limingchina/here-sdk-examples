@@ -298,6 +298,8 @@ class MainActivity: ComponentActivity() {
         })
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,

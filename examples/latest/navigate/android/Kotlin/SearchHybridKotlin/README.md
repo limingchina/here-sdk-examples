@@ -1,4 +1,6 @@
-The Routing example app shows how to calculate a route from A to B with a number of waypoints in between that is visualized on the map. You can find how this is done in [RoutingExample.kt](app/src/main/java/com/here/routing/RoutingExample.kt).
+The SearchHybrid example app shows how to search for places including autosuggestions, for the address that belongs to certain geographic coordinates (_reverse geocoding_) and for the geographic coordinates that belong to an address (_geocoding_). You can find how this is done in [SearchExample.kt](app/src/main/java/com/here/searchhybridkotlin/SearchExample.kt).
+
+Map storage in this app relies only on cache, and offline maps are not loaded. Offline maps could also be implemented here, but offline search is out of scope for this app. To learn how to implement it, see the OfflineMapsKotlin example app and [OfflineMapsExample.kt](../OfflineMapsKotlin/app/src/main/java/com/here/offlinemapskotlin/OfflineMapsExample.kt).
 
 **Note**: This is the same app as the "**SearchHybrid**" app, but implemented in Kotlin instead of Java.
 

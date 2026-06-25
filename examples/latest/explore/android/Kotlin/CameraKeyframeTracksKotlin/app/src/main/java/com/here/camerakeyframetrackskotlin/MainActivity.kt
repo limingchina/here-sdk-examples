@@ -161,6 +161,17 @@ class MainActivity: ComponentActivity() {
         })
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionsRequestor.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     override fun onDestroy() {
         disposeHERESDK()
         super.onDestroy()

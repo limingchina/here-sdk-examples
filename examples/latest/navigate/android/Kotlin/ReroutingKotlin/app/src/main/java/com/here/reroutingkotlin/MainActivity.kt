@@ -58,7 +58,6 @@ import com.here.sdk.units.core.utils.PermissionsRequestor
 
 class MainActivity : ComponentActivity() {
 
-
     private val environmentLogger = EnvironmentLogger()
     private lateinit var permissionsRequestor: PermissionsRequestor
     private var mapView: MapView? = null
@@ -94,10 +93,16 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { paddingValues ->
-                    Box(modifier = Modifier.padding(paddingValues)) {
+                    Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                         HereMapView(savedInstanceState)
-                        ButtonRows()
-                        ManeuverPanel()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopStart)
+                        ) {
+                            ButtonRows()
+                            ManeuverPanel()
+                        }
                     }
                 }
             }
@@ -125,8 +130,8 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
@@ -134,9 +139,9 @@ class MainActivity : ComponentActivity() {
                 horizontalArrangement = Arrangement.Center
             ) {
                 CustomButton(onClick = { reroutingExample?.onShowRouteButtonClicked() }, text = "Show Route")
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 CustomButton(onClick = { reroutingExample?.onStartStopButtonClicked() }, text = "Start/Stop")
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 CustomButton(onClick = { reroutingExample?.onClearMapButtonClicked() }, text = "Clear")
             }
             Row(
@@ -201,6 +206,17 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Permissions denied by user.")
             }
         })
+    }
+
+    @Suppress("DEPRECATION")
+    @Deprecated("This method has been deprecated and will be updated in a future release.")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionsRequestor.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun loadMapScene() {

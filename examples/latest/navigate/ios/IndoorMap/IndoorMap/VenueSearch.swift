@@ -28,7 +28,7 @@ public class VenueSearch: UIView {
     private weak var venueMap: VenueMap?
     private var venue: Venue?
     private var searchResult: [VenueGeometry] = []
-    private var filterType: VenueGeometryFilterType = .name
+    private let searchModeTitle = "Name or Identifier"
     private var tapHandler: VenueTapHandler?
 
     required init?(coder aDecoder: NSCoder) {
@@ -89,9 +89,14 @@ public class VenueSearch: UIView {
         if let venue = self.venue {
             let searchText = searchTextField.text ?? ""
             if !searchText.isEmpty {
-                searchResult = venue.venueModel.filterGeometry(filter: searchText, filterType: filterType)
+                let searchTextLowercased = searchText.lowercased()
+                searchResult = venue.venueModel.geometries.filter {
+                    let spaceNameStr = $0.name.isEmpty ? $0.identifier : $0.name
+                    return spaceNameStr.lowercased().contains(searchTextLowercased)
+                        || $0.level.name.lowercased().contains(searchTextLowercased)
+                }
             } else {
-                searchResult = venue.venueModel.geometriesByName
+                searchResult = venue.venueModel.geometries
             }
         } else {
             searchResult = []
@@ -113,29 +118,16 @@ extension VenueSearch: UIPickerViewDataSource {
     }
 
     public func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        return VenueGeometryFilterType.allCases.count
+        return 1
     }
 }
 
 extension VenueSearch: UIPickerViewDelegate {
     public func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        switch row {
-        case 0:
-            return "Name"
-        case 1:
-            return "Address"
-        case 2:
-            return "Name or Address"
-        case 3:
-            return "Icon Name"
-        default:
-            break
-        }
-        return "Name"
+        return searchModeTitle
     }
 
     public func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
-        filterType = VenueGeometryFilterType.allCases[row]
         onSearchTextChanged(self)
     }
 }
@@ -155,14 +147,10 @@ extension VenueSearch: UITableViewDataSource {
             = tableView.dequeueReusableCell(withIdentifier: "VenueSearchCellID", for: indexPath)
         cell.textLabel?.adjustsFontSizeToFitWidth = true
         let geometry = searchResult[indexPath.row]
-        var name = geometry.name + ", " + geometry.level.name
-        if let address = geometry.internalAddress {
-            if filterType == .address || filterType == .nameOrAddress {
-                name += "\n(Address: " + address.address + ")"
-            }
-        }
-        if filterType == .iconName {
-            name += "\n(Icon: " + geometry.labelName + ")"
+        var name = geometry.name.isEmpty ? geometry.identifier : geometry.name
+        name += ", " + geometry.level.name
+        if let address = geometry.internalAddress, !address.address.isEmpty {
+            name += "\n(Address: " + address.address + ")"
         }
         cell.textLabel?.numberOfLines = 2
         cell.textLabel?.text = name

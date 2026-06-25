@@ -93,7 +93,7 @@ public class RoutingExample {
     private final RoutingEngine routingEngine;
     private GeoCoordinates startGeoCoordinates;
     private GeoCoordinates destinationGeoCoordinates;
-    private boolean trafficEnabled;
+    private boolean trafficEnabled = true;
     private final TimeUtils timeUtils;
     private Route currentRoute;
     private static final double OFFROAD_DISTANCE_THRESHOLD_METERS = 500.0;
