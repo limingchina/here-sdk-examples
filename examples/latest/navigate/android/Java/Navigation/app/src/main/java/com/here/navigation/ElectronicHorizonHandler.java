@@ -24,6 +24,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.here.sdk.core.Color;
 import com.here.sdk.core.GeoCoordinates;
 import com.here.sdk.core.GeoPolyline;
 import com.here.sdk.core.GeoPolylineDirection;
@@ -39,18 +40,28 @@ import com.here.sdk.electronichorizon.ElectronicHorizonErrorCode;
 import com.here.sdk.electronichorizon.ElectronicHorizonListener;
 import com.here.sdk.electronichorizon.ElectronicHorizonOptions;
 import com.here.sdk.electronichorizon.ElectronicHorizonPath;
+import com.here.sdk.electronichorizon.ElectronicHorizonPosition;
 import com.here.sdk.electronichorizon.ElectronicHorizonSegment;
+import com.here.sdk.electronichorizon.ElectronicHorizonSegmentId;
 import com.here.sdk.electronichorizon.ElectronicHorizonUpdate;
 import com.here.sdk.mapdata.DirectedOCMSegmentId;
 import com.here.sdk.mapdata.SegmentData;
 import com.here.sdk.mapdata.SegmentDataLoaderOptions;
+import com.here.sdk.mapview.LineCap;
+import com.here.sdk.mapview.MapMeasureDependentRenderSize;
+import com.here.sdk.mapview.MapPolyline;
+import com.here.sdk.mapview.MapView;
+import com.here.sdk.mapview.RenderSize;
 import com.here.sdk.navigation.MapMatchedLocation;
 import com.here.sdk.navigation.RoadSign;
 import com.here.sdk.routing.Route;
 import com.here.sdk.transport.TransportMode;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // A class that handles electronic horizon related operations.
 // This is not required for navigation, but can be used to get information about the road network ahead of the user.
@@ -74,6 +85,7 @@ public class ElectronicHorizonHandler {
 
     private static final String LOG_TAG = ElectronicHorizonHandler.class.getName();
 
+    private final MapView mapView;
     @Nullable
     private ElectronicHorizonEngine electronicHorizonEngine;
     private final ElectronicHorizonDataLoader electronicHorizonDataLoader;
@@ -84,7 +96,15 @@ public class ElectronicHorizonHandler {
     // when data loading is completed.
     private ElectronicHorizon lastElectronicHorizon;
 
-    public ElectronicHorizonHandler() {
+    // Segment polyline map: maps the segment's OCM local ID to its drawn MapPolyline.
+    // This allows individual polylines to be removed when segments leave the horizon.
+    private final Map<Long, MapPolyline> segmentPolylineMap = new HashMap<>();
+
+    // Controls whether segment polylines are drawn on the map.
+    private boolean isVisualizationEnabled = false;
+
+    public ElectronicHorizonHandler(@NonNull MapView mapView) {
+        this.mapView = mapView;
         electronicHorizonListener = createElectronicHorizonListener();
         electronicHorizonDataLoaderStatusListener = createElectronicHorizonDataLoaderStatusListener();
 
@@ -100,7 +120,16 @@ public class ElectronicHorizonHandler {
         try {
             electronicHorizonDataLoader = new ElectronicHorizonDataLoader(getSDKNativeEngine(), segmentDataLoaderOptions, segmentDataCacheSize);
         } catch (InstantiationErrorException e) {
-            throw new RuntimeException("ElectronicHorizonDataLoader is not initialized: "+ e.error.name());
+            throw new RuntimeException("ElectronicHorizonDataLoader is not initialized: " + e.error.name());
+        }
+    }
+
+    // Enable or disable the colored segment polyline visualization on the map.
+    // When disabled all currently drawn polylines are removed from the map immediately.
+    public void toggleVisualization(boolean enabled) {
+        isVisualizationEnabled = enabled;
+        if (!enabled) {
+            clearVisualization();
         }
     }
 
@@ -113,7 +142,8 @@ public class ElectronicHorizonHandler {
         // the third is for the side paths of the second level, and so on.
         // Each entry defines how far ahead the path should be provided.
         List<Double> lookAheadDistancesInMeters = List.of(1000.0, 500.0, 250.0);
-        // Segments will be removed by the HERE SDK once passed and distance to it exceeds the trailingDistanceInMeters.
+        // Segments will be removed by the HERE SDK once passed and the distance to them exceeds trailingDistanceInMeters.
+        // Segments are also removed when the vehicle passes the decision point for alternative side paths.
         double trailingDistanceInMeters = 500;
         ElectronicHorizonOptions electronicHorizonOptions = new ElectronicHorizonOptions(lookAheadDistancesInMeters, trailingDistanceInMeters);
 
@@ -122,23 +152,24 @@ public class ElectronicHorizonHandler {
         try {
             electronicHorizonEngine = new ElectronicHorizonEngine(getSDKNativeEngine(), electronicHorizonOptions, transportMode, route);
         } catch (InstantiationErrorException e) {
-            throw new RuntimeException("ElectronicHorizonEngine is not initialized: "+ e.error.name());
+            throw new RuntimeException("ElectronicHorizonEngine is not initialized: " + e.error.name());
         }
 
-        // Remove any existing electronic horizon listeners.
+        // Remove any existing listeners before re-registering.
         stop();
 
         // Create and add new listeners.
         electronicHorizonListener = createElectronicHorizonListener();
         electronicHorizonEngine.addElectronicHorizonListener(electronicHorizonListener);
+
         electronicHorizonDataLoaderStatusListener = createElectronicHorizonDataLoaderStatusListener();
         electronicHorizonDataLoader.addElectronicHorizonDataLoaderStatusListener(electronicHorizonDataLoaderStatusListener);
         Log.d(LOG_TAG, "ElectronicHorizonEngine started.");
     }
 
-    // Similar like the VisualNavigator, the ElectronicHorizonEngine also needs to be updated with
-    // a location, with the difference that the location must be map-matched. Therefore, the
-    // location provided by the VisualNavigator can be used.
+    // Similar to the VisualNavigator, the ElectronicHorizonEngine also needs to be updated with
+    // a location - with the difference that the location must be map-matched. Therefore, the
+    // location provided by the VisualNavigator can be used directly.
     public void update(@NonNull MapMatchedLocation mapMatchedLocation) {
         if (electronicHorizonEngine == null) {
             throw new IllegalStateException("ElectronicHorizonEngine is not initialized. Call start() first.");
@@ -148,8 +179,9 @@ public class ElectronicHorizonHandler {
     }
 
     // Create a listener to get notified about electronic horizon updates while a user moves along the road.
-    // This only informs on the available segment IDs and indexes, so that the actual data can be requested
-    // by the ElectronicHorizonDataLoader.
+    // This informs on the available segment IDs and indexes so that the actual data can be requested
+    // by the ElectronicHorizonDataLoader. It also carries removed segment IDs so their polylines
+    // can be cleared from the map immediately.
     private ElectronicHorizonListener createElectronicHorizonListener() {
         return new ElectronicHorizonListener() {
             @Override
@@ -160,12 +192,36 @@ public class ElectronicHorizonHandler {
                     return;
                 }
                 Log.d(LOG_TAG, "ElectronicHorizonUpdate received.");
-                // Asynchronously start to load required data for the new segments.
-                // Use the ElectronicHorizonDataLoaderStatusListener to get notified when new data is arriving.
+
+                // The update always carries the vehicle's current position in the horizon tree.
+                ElectronicHorizonPosition position = electronicHorizonUpdate.position;
+                Log.d(LOG_TAG, "EH position: pathIndex=" + position.pathIndex
+                        + ", pathSegmentIndex=" + position.pathSegmentIndex
+                        + ", offsetInMeters=" + position.pathSegmentOffsetInMeters);
+
+                // Store last known horizon if present.
                 if (electronicHorizonUpdate.electronicHorizon != null) {
                     lastElectronicHorizon = electronicHorizonUpdate.electronicHorizon;
                 }
-                // Load segment changes if present.
+
+                // Remove map polylines for segments that have left the horizon.
+                // Segments are removed by the HERE SDK in two cases:
+                //   1. They are behind the vehicle and exceed trailingDistanceInMeters.
+                //   2. The vehicle passes the decision point for an alternative side path.
+                if (isVisualizationEnabled && electronicHorizonUpdate.segmentChanges != null) {
+                    for (ElectronicHorizonSegmentId segmentId : electronicHorizonUpdate.segmentChanges.removedIds) {
+                        if (segmentId.ocmSegmentId == null) continue;
+                        long localId = segmentId.ocmSegmentId.id.localId;
+                        MapPolyline polyline = segmentPolylineMap.remove(localId);
+                        if (polyline != null) {
+                            Log.d("eh segments", "Removing segment polyline - localId=" + localId);
+                            mapView.getMapScene().removeMapPolyline(polyline);
+                        }
+                    }
+                }
+
+                // Asynchronously start to load required data for the new segments.
+                // Use the ElectronicHorizonDataLoaderStatusListener to get notified when new data arrives.
                 if (electronicHorizonUpdate.segmentChanges != null) {
                     electronicHorizonDataLoader.loadData(electronicHorizonUpdate);
                 }
@@ -174,71 +230,69 @@ public class ElectronicHorizonHandler {
     }
 
     // Handle newly arriving map data segments provided by the ElectronicHorizonDataLoader.
-    // This listener is called when the status of the data loader is updated and new segments have been added
-    // or removed.
+    // This listener is called when the data loader's status is updated and segments are ready.
+    // When visualization is enabled, newly loaded segments are drawn as colored polylines on the map.
     private ElectronicHorizonDataLoaderStatusListener createElectronicHorizonDataLoaderStatusListener() {
         return new ElectronicHorizonDataLoaderStatusListener() {
             @Override
             public void onElectronicHorizonDataLoaderStatusUpdated(@NonNull Map<Integer, ElectronicHorizonDataLoadedStatus> statusMap) {
                 Log.d(LOG_TAG, "ElectronicHorizonDataLoaderStatus updated.");
 
-                // Use stored lastElectronicHorizon to iterate paths, skip if null.
                 if (lastElectronicHorizon == null) {
                     return;
                 }
-                // Access the segments that were part of the last requested electronic horizon update.
-                // Newly added segments were requested to be loaded in the call to electronicHorizonDataLoader.loadData().
-                // Internally, the data loader keeps track of which segments were requested and keeps updating
-                // the provided ElectronicHorizonUpdate instance over time.
+
+                List<ElectronicHorizonPath> allPaths = lastElectronicHorizon.paths;
+
                 for (Map.Entry<Integer, ElectronicHorizonDataLoadedStatus> entry : statusMap.entrySet()) {
-                    ElectronicHorizonDataLoadedStatus status = entry.getValue();
-                    // The integer key represents the level of the most preferred path (0) and side paths (1, 2, ...).
-                    int level = entry.getKey();
-                    // This example shows only how to look at the fully loaded segments of the most preferred path (level 0).
-                    if (level == 0 && status == ElectronicHorizonDataLoadedStatus.FULLY_LOADED) {
-                        // Skip this iteration to avoid null access.
-                        if (lastElectronicHorizon == null) {
-                            continue;
+                    int loadedLevel = entry.getKey();
+                    if (entry.getValue() != ElectronicHorizonDataLoadedStatus.FULLY_LOADED) {
+                        continue;
+                    }
+
+                    // Level 0 = MPP. Process MPP segments for road sign logging.
+                    if (loadedLevel == 0 && !allPaths.isEmpty()) {
+                        ElectronicHorizonPath mpp = allPaths.get(0);
+                        for (ElectronicHorizonSegment segment : mpp.segments) {
+                            DirectedOCMSegmentId directedOCMSegmentId = segment.segmentId.ocmSegmentId;
+                            if (directedOCMSegmentId == null) continue;
+                            ElectronicHorizonDataLoaderResult result = electronicHorizonDataLoader.getSegment(directedOCMSegmentId);
+                            if (result.errorCode == null && result.segmentData != null) {
+                                logRoadSigns(result.segmentData, directedOCMSegmentId);
+                            }
                         }
-                        // Now, level 0 segments have been fully loaded and you can access their data.
-                        // The electronicHorizon.paths list contains segments from all levels, so you need to filter for level 0 below.
-                        List<ElectronicHorizonPath> electronicHorizonPaths = lastElectronicHorizon.paths;
-                        for (ElectronicHorizonPath electronicHorizonPath : electronicHorizonPaths) {
-                            List<ElectronicHorizonSegment> electronicHorizonSegment = electronicHorizonPath.segments;
-                            for (ElectronicHorizonSegment segment : electronicHorizonSegment) {
-                                // For any segment you can check the parentPathIndex to determine
-                                // if it is part of the most preferred path (MPP) or a side path.
-                                if (segment.parentPathIndex != 0) {
-                                    // Skip side path segments as we only want to log MPP segment data in this example.
-                                    // And this example only logs fully loaded segments.
+                        continue;
+                    }
+
+                    // For side-path levels (level > 0): walk all path segments and use
+                    // sidePathIndexes to find paths that branch off at each segment.
+                    // sidePathIndexes contains indexes into allPaths[], pointing to branching paths.
+                    // Track processed path indexes to avoid redundant getSegment() calls.
+                    Set<Integer> processedSidePathIndexes = new HashSet<>();
+                    for (ElectronicHorizonPath path : allPaths) {
+                        for (ElectronicHorizonSegment segment : path.segments) {
+                            for (Integer sidePathIndex : segment.sidePathIndexes) {
+                                if (sidePathIndex < 0 || sidePathIndex >= allPaths.size()) continue;
+                                if (!processedSidePathIndexes.add(sidePathIndex)) continue;
+                                ElectronicHorizonPath branchingPath = allPaths.get(sidePathIndex);
+
+                                // Only process branching paths at the loaded level.
+                                if (branchingPath.level != loadedLevel) {
                                     continue;
                                 }
 
-                                DirectedOCMSegmentId directedOCMSegmentId = segment.segmentId.ocmSegmentId;
-                                if (directedOCMSegmentId == null) {
-                                    continue;
-                                }
+                                Log.d(LOG_TAG, "Branching path index: " + sidePathIndex + ", level: " + branchingPath.level);
 
-                                // Retrieving segment data from the loader is executed synchrounous. However, since the data has been
-                                // already loaded, this is a fast operation.
-                                ElectronicHorizonDataLoaderResult result = electronicHorizonDataLoader.getSegment(directedOCMSegmentId);
-                                if (result.errorCode == null) {
-                                    // When errorCode is null, segmentData is guaranteed to be non-null.
-                                    SegmentData segmentData = result.segmentData;
-                                    assert segmentData != null;
-                                    // Access the data that was requested to be loaded in SegmentDataLoaderOptions.
-                                    // For this example, we just log road signs.
-                                    List<RoadSign> roadSigns = segmentData.getRoadSigns();
-                                    if (roadSigns == null || roadSigns.isEmpty()) {
-                                        continue;
-                                    }
-                                    for (RoadSign roadSign : roadSigns) {
-                                        GeoCoordinates roadSignCoordinates = getGeoCoordinatesFromOffsetInMeters(segmentData.getPolyline(), roadSign.offsetInMeters);
-                                        Log.d(LOG_TAG, "RoadSign: type = "
-                                                + roadSign.roadSignType.name()
-                                                + ", offsetInMeters = " + roadSign.offsetInMeters
-                                                + ", lat/lon: " + roadSignCoordinates.latitude + "/" + roadSignCoordinates.longitude
-                                                + ", segmentId = " + directedOCMSegmentId.id.localId);
+                                // Draw all segments of this branching path.
+                                for (ElectronicHorizonSegment branchSegment : branchingPath.segments) {
+                                    DirectedOCMSegmentId directedOCMSegmentId = branchSegment.segmentId.ocmSegmentId;
+                                    if (directedOCMSegmentId == null) continue;
+
+                                    ElectronicHorizonDataLoaderResult result = electronicHorizonDataLoader.getSegment(directedOCMSegmentId);
+                                    if (result.errorCode == null && result.segmentData != null) {
+                                        if (isVisualizationEnabled) {
+                                            drawSegmentPolyline(directedOCMSegmentId.id.localId, result.segmentData.getPolyline(), branchingPath.level);
+                                        }
                                     }
                                 }
                             }
@@ -247,6 +301,98 @@ public class ElectronicHorizonHandler {
                 }
             }
         };
+    }
+
+    // Draw a colored MapPolyline for the given road segment and register it in segmentPolylineMap
+    // so it can be removed when the segment leaves the horizon.
+    private void drawSegmentPolyline(long localId, GeoPolyline geoPolyline, int level) {
+        // MPP (Most Preferred Path, level == 0) is already rendered as the main route
+        // We only draw visual polylines for alternative side-paths (level > 0)
+        if (level == 0) {
+            Log.d(LOG_TAG, "MPP SEGMENT - localId=" + localId + " (already rendered as main route)");
+            return;
+        }
+
+        // Skip if a polyline for this segment is already on the map.
+        if (segmentPolylineMap.containsKey(localId)) return;
+
+        Color color;
+        String colorName;
+        switch (level) {
+            case 1:  
+                color = Color.valueOf(0f, 1f, 1f, 1.0f);    // Cyan - first side-path level
+                colorName = "CYAN";
+                break;
+            case 2:
+                color = Color.valueOf(1f, 0.2f, 0.8f, 0.85f); // Pink/Fuchsia - second side-path level
+                colorName = "PINK";
+                break;
+            case 3:
+                color = Color.valueOf(1f, 0.65f, 0f, 0.85f); // Orange - third side-path level
+                colorName = "ORANGE";
+                break;
+            case 4:
+                color = Color.valueOf(0f, 1f, 0f, 0.85f); // Green - fourth side-path level
+                colorName = "GREEN";
+                break;
+            default:
+                return; // Don't draw levels beyond 4
+        }
+        
+        Log.d("eh segments", "Drawing segment polyline - localId=" + localId 
+                + ", level=" + level 
+                + ", color=" + colorName);
+        
+        float widthInPixels = 25f;
+        MapPolyline mapPolyline;
+        try {
+            mapPolyline = new MapPolyline(
+                    geoPolyline,
+                    new MapPolyline.SolidRepresentation(
+                            new MapMeasureDependentRenderSize(RenderSize.Unit.PIXELS, widthInPixels),
+                            color,
+                            LineCap.ROUND
+                    )
+            );
+            Log.d("eh segments", "MapPolyline created successfully for localId=" + localId);
+        } catch (MapPolyline.Representation.InstantiationException e) {
+            Log.e(LOG_TAG, "MapPolyline instantiation failed: " + e.error.name());
+            return;
+        } catch (MapMeasureDependentRenderSize.InstantiationException e) {
+            Log.e(LOG_TAG, "MapMeasureDependentRenderSize instantiation failed: " + e.error.name());
+            return;
+        }
+
+        try {
+            mapView.getMapScene().addMapPolyline(mapPolyline);
+            segmentPolylineMap.put(localId, mapPolyline);
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "ERROR adding polyline to map scene: " + e.getMessage());
+            return;
+        }
+    }
+
+    // Remove all EH segment polylines from the map.
+    private void clearVisualization() {
+        int count = segmentPolylineMap.size();
+        for (MapPolyline polyline : segmentPolylineMap.values()) {
+            mapView.getMapScene().removeMapPolyline(polyline);
+        }
+        segmentPolylineMap.clear();
+    }
+
+    // Log road sign information from a fully loaded segment.
+    private void logRoadSigns(SegmentData segmentData, DirectedOCMSegmentId directedOCMSegmentId) {
+        List<RoadSign> roadSigns = segmentData.getRoadSigns();
+        if (roadSigns == null || roadSigns.isEmpty()) return;
+        for (RoadSign roadSign : roadSigns) {
+            GeoCoordinates roadSignCoordinates = getGeoCoordinatesFromOffsetInMeters(segmentData.getPolyline(), roadSign.offsetInMeters);
+            Log.d(LOG_TAG, "RoadSign: type = "
+                    + roadSign.roadSignType.name()
+                    + ", offsetInMeters = " + roadSign.offsetInMeters
+                    + ", lat/lon: " + roadSignCoordinates.latitude + "/" + roadSignCoordinates.longitude
+                    + ", segmentId = " + directedOCMSegmentId.id.localId);
+        }
     }
 
     // Convert an offset in meters along a GeoPolyline to GeoCoordinates using the HERE SDK's coordinatesAtOffsetInMeters.
@@ -261,6 +407,7 @@ public class ElectronicHorizonHandler {
 
         electronicHorizonEngine.removeElectronicHorizonListener(electronicHorizonListener);
         electronicHorizonDataLoader.removeElectronicHorizonDataLoaderStatusListener(electronicHorizonDataLoaderStatusListener);
+        clearVisualization();
         Log.d(LOG_TAG, "ElectronicHorizonEngine stopped.");
     }
 

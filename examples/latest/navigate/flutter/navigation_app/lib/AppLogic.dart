@@ -115,6 +115,10 @@ class AppLogic {
     _navigationExample.detach();
   }
 
+  void toggleEHVisualization(bool enabled) {
+    _navigationExample.toggleEHVisualization(enabled);
+  }
+
   Future<void> _calculateRoute(bool isSimulated) async {
     _clearMap();
     var currentLocation = _navigationExample.getLastKnownLocation();

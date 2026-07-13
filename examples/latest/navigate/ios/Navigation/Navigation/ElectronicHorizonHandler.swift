@@ -18,6 +18,7 @@
  */
 
 import heresdk
+import UIKit
 
 /// A class that handles electronic horizon related operations.
 /// This is not required for navigation, but can be used to get information about the road network ahead of the user.
@@ -41,6 +42,7 @@ class ElectronicHorizonHandler {
 
     private static let LOG_TAG = String(describing: ElectronicHorizonHandler.self)
 
+    private let mapView: MapView
     private var electronicHorizonEngine: ElectronicHorizonEngine?
     private let electronicHorizonDataLoader: ElectronicHorizonDataLoader
 
@@ -56,7 +58,16 @@ class ElectronicHorizonHandler {
     // when data loading is completed.
     private var lastElectronicHorizon: ElectronicHorizon?
 
-    init() {
+    // Segment polyline map: maps the segment's OCM local ID to its drawn MapPolyline.
+    // This allows individual polylines to be removed when segments leave the horizon.
+    private var segmentPolylineMap: [Int64: MapPolyline] = [:]
+
+    // Controls whether segment polylines are drawn on the map.
+    private var isVisualizationEnabled = false
+
+    init(mapView: MapView) {
+        self.mapView = mapView
+
         // Many more options are available, see SegmentDataLoaderOptions in the API Reference.
         var segmentDataLoaderOptions = SegmentDataLoaderOptions()
         segmentDataLoaderOptions.loadRoadSigns = true
@@ -77,6 +88,16 @@ class ElectronicHorizonHandler {
         }
     }
 
+    /// Enable or disable the colored segment polyline visualization on the map.
+    /// When disabled, all currently drawn polylines are removed from the map immediately.
+    func toggleVisualization(enabled: Bool) {
+        isVisualizationEnabled = enabled
+        if !enabled {
+            clearVisualization()
+        }
+        print("\(Self.LOG_TAG): EH visualization \(enabled ? "enabled" : "disabled").")
+    }
+
     /// Without a route, electronic horizon operates in tracking mode and the most probable path is
     /// estimated based on the current location and previous locations.
     /// With a route, electronic horizon operates in map-matched mode and the route is used
@@ -86,7 +107,8 @@ class ElectronicHorizonHandler {
         // the third is for the side paths of the second level, and so on.
         // Each entry defines how far ahead the path should be provided.
         let lookAheadDistancesInMeters = [1000.0, 500.0, 250.0]
-        // Segments will be removed by the HERE SDK once passed and distance to it exceeds the trailingDistanceInMeters.
+        // Segments will be removed by the HERE SDK once passed and the distance to them exceeds trailingDistanceInMeters.
+        // Segments are also removed when the vehicle passes the decision point for alternative side paths.
         let trailingDistanceInMeters = 500.0
         let electronicHorizonOptions = ElectronicHorizonOptions(
             lookAheadDistancesInMeters: lookAheadDistancesInMeters,
@@ -106,7 +128,7 @@ class ElectronicHorizonHandler {
             fatalError("ElectronicHorizonEngine is not initialized: \(instantiationError)")
         }
 
-        // Remove any existing electronic horizon delegates.
+        // Remove any existing delegates before re-registering.
         stop()
 
         // Create and add new delegates.
@@ -119,9 +141,9 @@ class ElectronicHorizonHandler {
         print("\(Self.LOG_TAG): ElectronicHorizonEngine started.")
     }
 
-    /// Similar like the VisualNavigator, the ElectronicHorizonEngine also needs to be updated with
-    /// a location, with the difference that the location must be map-matched. Therefore, the
-    /// location provided by the VisualNavigator can be used.
+    /// Similar to the VisualNavigator, the ElectronicHorizonEngine also needs to be updated with
+    /// a location - with the difference that the location must be map-matched. Therefore, the
+    /// location provided by the VisualNavigator can be used directly.
     func update(mapMatchedLocation: MapMatchedLocation) {
         guard let electronicHorizon = electronicHorizonEngine else {
             fatalError("ElectronicHorizonEngine is not initialized. Call start() first.")
@@ -131,8 +153,9 @@ class ElectronicHorizonHandler {
     }
 
     /// Create a delegate to get notified about electronic horizon updates while a user moves along the road.
-    /// This only informs on the available segment IDs and indexes, so that the actual data can be requested
-    /// by the ElectronicHorizonDataLoader.
+    /// This informs on the available segment IDs and indexes so that the actual data can be requested
+    /// by the ElectronicHorizonDataLoader. It also carries removed segment IDs so their polylines
+    /// can be cleared from the map immediately.
     private func createElectronicHorizonDelegate() -> ElectronicHorizonDelegate {
         class EHDelegate: ElectronicHorizonDelegate {
             weak var handler: ElectronicHorizonHandler?
@@ -147,18 +170,34 @@ class ElectronicHorizonHandler {
                     return
                 }
 
-                guard let electronicHorizonUpdate = update else {
-                    return
-                }
+                guard let electronicHorizonUpdate = update else { return }
 
                 print("\(ElectronicHorizonHandler.LOG_TAG): ElectronicHorizonUpdate received.")
-                
+
+                // The update always carries the vehicle's current position in the horizon tree.
+                let position = electronicHorizonUpdate.position
+                print("\(ElectronicHorizonHandler.LOG_TAG): EH position: pathIndex=\(position.pathIndex), pathSegmentIndex=\(position.pathSegmentIndex), offsetInMeters=\(position.pathSegmentOffsetInMeters)")
+
                 // Store last known horizon if present.
                 if electronicHorizonUpdate.electronicHorizon != nil {
                     handler?.lastElectronicHorizon = electronicHorizonUpdate.electronicHorizon
                 }
+
+                // Remove map polylines for segments that have left the horizon.
+                // Segments are removed by the HERE SDK in two cases:
+                //   1. They are behind the vehicle and exceed trailingDistanceInMeters.
+                //   2. The vehicle passes the decision point for an alternative side path.
+                if handler?.isVisualizationEnabled == true {
+                    electronicHorizonUpdate.segmentChanges?.removedIds.forEach { segmentId in
+                        guard let localId = segmentId.ocmSegmentId?.id.localId else { return }
+                        if let polyline = handler?.segmentPolylineMap.removeValue(forKey: Int64(localId)) {
+                            handler?.mapView.mapScene.removeMapPolyline(polyline)
+                        }
+                    }
+                }
+
                 // Asynchronously start to load required data for the new segments.
-                // Use the ElectronicHorizonDataLoaderStatusListener to get notified when new data is arriving.
+                // Use the ElectronicHorizonDataLoaderStatusDelegate to get notified when new data arrives.
                 if electronicHorizonUpdate.segmentChanges != nil {
                     handler?.electronicHorizonDataLoader.loadData(electronicHorizonUpdate: electronicHorizonUpdate)
                 }
@@ -168,8 +207,8 @@ class ElectronicHorizonHandler {
     }
 
     /// Handle newly arriving map data segments provided by the ElectronicHorizonDataLoader.
-    /// This delegate is called when the status of the data loader is updated and new segments have been added
-    /// or removed.
+    /// This delegate is called when the data loader's status is updated and segments are ready.
+    /// When visualization is enabled, newly loaded segments are drawn as colored polylines on the map.
     private func createElectronicHorizonDataLoaderStatusDelegate() -> ElectronicHorizonDataLoaderStatusDelegate {
         class EHStatusDelegate: ElectronicHorizonDataLoaderStatusDelegate {
             weak var handler: ElectronicHorizonHandler?
@@ -182,50 +221,55 @@ class ElectronicHorizonHandler {
                 print("\(ElectronicHorizonHandler.LOG_TAG): ElectronicHorizonDataLoaderStatus updated.")
 
                 guard let handler = handler,
-                let lastUpdate = handler.lastElectronicHorizon else { return }
-                
-                // Access the segments that were part of the last requested electronic horizon update.
-                // Newly added segments were requested to be loaded in the call to electronicHorizonDataLoader.loadData().
-                // Internally, the data loader keeps track of which segments were requested and keeps updating
-                // the provided ElectronicHorizonUpdate instance over time.
-                for (level, status) in statusMap {
-                    // The integer key represents the level of the most preferred path (0) and side paths (1, 2, ...).
-                    // This example shows only how to look at the fully loaded segments of the most preferred path (level 0).
-                    if level == 0 && status == .fullyLoaded {
-                        // Now, level 0 segments have been fully loaded and you can access their data.
-                        // The electronicHorizonPaths list contains segments from all levels,
-                        // so you need to filter for level 0 below.
-                        let electronicHorizon = lastUpdate
-                        for electronicHorizonPath in electronicHorizon.paths {
-                            let electronicHorizonPathSegments = electronicHorizonPath.segments
-                            for segment in electronicHorizonPathSegments {
-                                // For any segment you can check the parentPathIndex to determine
-                                // if it is part of the most preferred path (MPP) or a side path.
-                                if segment.parentPathIndex != 0 {
-                                    // Skip side path segments as we only want to log MPP segment data in this example.
-                                    // And we only want to log fully loaded segments.
-                                    continue
-                                }
-                                
-                                guard let directedOCMSegmentId = segment.segmentId.ocmSegmentId else {
-                                    continue
-                                }
-                                
-                                // Retrieving segment data from the loader is executed synchronous. However, since the data has been
-                                // already loaded, this is a fast operation.
-                                let result = handler.electronicHorizonDataLoader.getSegment(segmentId: directedOCMSegmentId)
-                                if result.errorCode == nil, let segmentData = result.segmentData {
-                                    // Access the data that was requested to be loaded in SegmentDataLoaderOptions.
-                                    // For this example, we just log road signs.
-                                    guard let roadSigns = segmentData.roadSigns, !roadSigns.isEmpty else {
-                                        continue
-                                    }
-                                    for roadSign in roadSigns {
-                                        let roadSignCoordinates = handler.getGeoCoordinatesFromOffsetInMeters(
-                                            geoPolyline: segmentData.polyline,
-                                            offsetInMeters: Double(roadSign.offsetInMeters)
-                                        )
-                                        print("\(ElectronicHorizonHandler.LOG_TAG): RoadSign: type = \(roadSign.roadSignType.rawValue), offsetInMeters = \(roadSign.offsetInMeters), lat/lon: \(roadSignCoordinates.latitude)/\(roadSignCoordinates.longitude), segmentId = \(directedOCMSegmentId.id.localId)")
+                      let lastUpdate = handler.lastElectronicHorizon else { return }
+
+                let allPaths = lastUpdate.paths
+
+                for (loadedLevel, status) in statusMap {
+                    guard status == .fullyLoaded else { continue }
+
+                    // Level 0 = MPP. Process MPP segments for road sign logging.
+                    if loadedLevel == 0, let mpp = allPaths.first {
+                        for segment in mpp.segments {
+                            guard let directedOCMSegmentId = segment.segmentId.ocmSegmentId else { continue }
+                            let result = handler.electronicHorizonDataLoader.getSegment(segmentId: directedOCMSegmentId)
+                            if result.errorCode == nil, let segmentData = result.segmentData {
+                                handler.logRoadSigns(segmentData: segmentData, directedOCMSegmentId: directedOCMSegmentId)
+                            }
+                        }
+                        continue
+                    }
+
+                    // For side-path levels (level > 0): walk all path segments and use
+                    // sidePathIndexes to find paths that branch off at each segment.
+                    // sidePathIndexes contains indexes into allPaths[], pointing to branching paths.
+                    // Track processed path indexes to avoid redundant getSegment() calls.
+                    var processedSidePathIndexes = Set<Int>()
+                    for path in allPaths {
+                        for segment in path.segments {
+                            for sidePathIndex in segment.sidePathIndexes {
+                                let idx = Int(sidePathIndex)
+                                guard idx >= 0 && idx < allPaths.count else { continue }
+                                guard processedSidePathIndexes.insert(idx).inserted else { continue }
+                                let branchingPath = allPaths[idx]
+
+                                // Only process branching paths at the loaded level.
+                                guard branchingPath.level == loadedLevel else { continue }
+
+                                print("\(ElectronicHorizonHandler.LOG_TAG): Branching path index: \(sidePathIndex), level: \(branchingPath.level)")
+
+                                // Draw all segments of this branching path.
+                                for branchSegment in branchingPath.segments {
+                                    guard let directedOCMSegmentId = branchSegment.segmentId.ocmSegmentId else { continue }
+                                    let result = handler.electronicHorizonDataLoader.getSegment(segmentId: directedOCMSegmentId)
+                                    if result.errorCode == nil, let segmentData = result.segmentData {
+                                        if handler.isVisualizationEnabled {
+                                            handler.drawSegmentPolyline(
+                                                localId: Int64(directedOCMSegmentId.id.localId),
+                                                geoPolyline: segmentData.polyline,
+                                                level: Int(branchingPath.level)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -238,7 +282,87 @@ class ElectronicHorizonHandler {
         return EHStatusDelegate(handler: self)
     }
 
-    /// Convert an offset in meters along a GeoPolyline to GeoCoordinates using the HERE SDK's coordinatesAtOffsetInMeters.
+    /// Draw a colored MapPolyline for the given road segment and register it in segmentPolylineMap
+    /// so it can be removed when the segment leaves the horizon.
+    ///   - MPP (level == 0):        Already rendered as main route
+    ///   - Side paths level 1:       Cyan
+    ///   - Side paths level 2:       Pink
+    ///   - Side paths level 3:       Orange
+    ///   - Side paths level 4:       Green
+    private func drawSegmentPolyline(localId: Int64, geoPolyline: GeoPolyline, level: Int) {
+        // MPP (Most Preferred Path, level == 0) is already rendered as the main route
+        // We only draw visual polylines for alternative side-paths (level > 0)
+        if level == 0 {
+            print("\(Self.LOG_TAG): MPP SEGMENT - localId=\(localId) (already rendered as main route)")
+            return
+        }
+
+        // Skip if a polyline for this segment is already on the map.
+        guard segmentPolylineMap[localId] == nil else { return }
+
+        let color: UIColor
+        let colorName: String
+        switch level {
+        case 1:
+            color = UIColor(red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0) // Cyan - first side-path level
+            colorName = "CYAN"
+        case 2:
+            color = UIColor(red: 1.0, green: 0.2, blue: 0.8, alpha: 0.85) // Pink/Fuchsia - second side-path level
+            colorName = "PINK"
+        case 3:
+            color = UIColor(red: 1.0, green: 0.65, blue: 0.0, alpha: 0.85) // Orange - third side-path level
+            colorName = "ORANGE"
+        case 4:
+            color = UIColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 0.85) // Green - fourth side-path level
+            colorName = "GREEN"
+        default:
+            return // Don't draw levels beyond 4
+        }
+
+        print("\(Self.LOG_TAG): Drawing segment polyline - localId=\(localId), level=\(level), color=\(colorName)")
+
+        do {
+            let mapPolyline = try MapPolyline(
+                geometry: geoPolyline,
+                representation: MapPolyline.SolidRepresentation(
+                    lineWidth: MapMeasureDependentRenderSize(
+                        sizeUnit: RenderSize.Unit.pixels,
+                        size: 25.0
+                    ),
+                    color: color,
+                    capShape: LineCap.round
+                )
+            )
+            mapView.mapScene.addMapPolyline(mapPolyline)
+            segmentPolylineMap[localId] = mapPolyline
+            print("\(Self.LOG_TAG): Successfully added polyline to map scene - localId=\(localId)")
+        } catch {
+            print("\(Self.LOG_TAG): MapPolyline instantiation failed: \(error)")
+        }
+    }
+
+    /// Remove all EH segment polylines from the map.
+    private func clearVisualization() {
+        for polyline in segmentPolylineMap.values {
+            mapView.mapScene.removeMapPolyline(polyline)
+        }
+        segmentPolylineMap.removeAll()
+    }
+
+    /// Log road sign information from a fully loaded segment. Demonstrates how to read
+    /// road attributes from SegmentData for MPP segments.
+    private func logRoadSigns(segmentData: SegmentData, directedOCMSegmentId: DirectedOCMSegmentId) {
+        guard let roadSigns = segmentData.roadSigns, !roadSigns.isEmpty else { return }
+        for roadSign in roadSigns {
+            let roadSignCoordinates = getGeoCoordinatesFromOffsetInMeters(
+                geoPolyline: segmentData.polyline,
+                offsetInMeters: Double(roadSign.offsetInMeters)
+            )
+            print("\(ElectronicHorizonHandler.LOG_TAG): RoadSign: type = \(roadSign.roadSignType.rawValue), offsetInMeters = \(roadSign.offsetInMeters), lat/lon: \(roadSignCoordinates.latitude)/\(roadSignCoordinates.longitude), segmentId = \(directedOCMSegmentId.id.localId)")
+        }
+    }
+
+    /// Convert an offset in meters along a GeoPolyline to GeoCoordinates.
     private func getGeoCoordinatesFromOffsetInMeters(geoPolyline: GeoPolyline, offsetInMeters: Double) -> heresdk.GeoCoordinates {
         return geoPolyline.coordinatesAt(offsetInMeters: offsetInMeters,
                                          direction: .fromBeginning)
@@ -249,6 +373,7 @@ class ElectronicHorizonHandler {
 
         electronicHorizon.removeElectronicHorizonDelegate(_: electronicHorizonDelegate)
         electronicHorizonDataLoader.removeElectronicHorizonDataLoaderStatusDelegate(_: electronicHorizonDataLoaderStatusDelegate)
+        clearVisualization()
         print("\(Self.LOG_TAG): ElectronicHorizonEngine stopped.")
     }
 

@@ -53,6 +53,16 @@ struct ContentView: View {
                             navigationAppLogic.enableCameraTracking()
                         }
                     )
+                    CustomToggleButton(
+                        onLabel: "EH Paths: Off",
+                        offLabel: "EH Paths: On",
+                        onAction: {
+                            navigationAppLogic.disableEHVisualization()
+                        },
+                        offAction: {
+                            navigationAppLogic.enableEHVisualization()
+                        }
+                    )
                     CustomButton(title: "Clear map") {
                         navigationAppLogic.clearMapButtonClicked()
                     }

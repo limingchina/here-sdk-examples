@@ -19,6 +19,7 @@
 package com.here.navigationkotlin
 
 import android.util.Log
+import com.here.sdk.core.Color
 import com.here.sdk.core.GeoCoordinates
 import com.here.sdk.core.GeoPolyline
 import com.here.sdk.core.GeoPolylineDirection
@@ -33,12 +34,20 @@ import com.here.sdk.electronichorizon.ElectronicHorizonEngine
 import com.here.sdk.electronichorizon.ElectronicHorizonErrorCode
 import com.here.sdk.electronichorizon.ElectronicHorizonListener
 import com.here.sdk.electronichorizon.ElectronicHorizonOptions
+import com.here.sdk.electronichorizon.ElectronicHorizonPosition
 import com.here.sdk.electronichorizon.ElectronicHorizonUpdate
 import com.here.sdk.mapdata.*
+import com.here.sdk.mapview.LineCap
+import com.here.sdk.mapview.MapMeasureDependentRenderSize
+import com.here.sdk.mapview.MapPolyline
+import com.here.sdk.mapview.MapPolyline.SolidRepresentation
+import com.here.sdk.mapview.MapView
+import com.here.sdk.mapview.RenderSize
 import com.here.sdk.navigation.MapMatchedLocation
 import com.here.sdk.navigation.RoadSign
 import com.here.sdk.routing.Route
 import com.here.sdk.transport.TransportMode
+
 
 // A class that handles electronic horizon related operations.
 // This is not required for navigation, but can be used to get information about the road network ahead of the user.
@@ -58,7 +67,7 @@ import com.here.sdk.transport.TransportMode
 // When it does not find cached, prefetched or preloaded region data for a segment,
 // it will asynchronously request the data from the HERE backend services.
 // It is recommended to use a prefetcher to prefetch region data along the route in advance (not shown in this class).
-class ElectronicHorizonHandler {
+class ElectronicHorizonHandler(private val mapView: MapView) {
     private var electronicHorizon: ElectronicHorizonEngine? = null
     private val electronicHorizonDataLoader: ElectronicHorizonDataLoader
     private var electronicHorizonListener: ElectronicHorizonListener
@@ -67,6 +76,13 @@ class ElectronicHorizonHandler {
     // Keep track of the last requested electronic horizon update to access its segments
     // when data loading is completed.
     private var lastElectronicHorizon: ElectronicHorizon? = null
+
+    // Segment polyline map: maps the segment's OCM local ID to its drawn MapPolyline.
+    // This allows us to remove individual polylines when segments leave the horizon.
+    private val segmentPolylineMap: MutableMap<Long, MapPolyline> = HashMap()
+
+    // Controls whether segment polylines are drawn on the map.
+    private var isVisualizationEnabled = false
 
     init {
         electronicHorizonListener = createElectronicHorizonListener()
@@ -93,6 +109,16 @@ class ElectronicHorizonHandler {
         }
     }
 
+    // Enable or disable the colored segment polyline visualization on the map.
+    // When disabled all currently drawn polylines are removed from the map immediately.
+    fun toggleVisualization(enabled: Boolean) {
+        isVisualizationEnabled = enabled
+        if (!enabled) {
+            clearVisualization()
+        }
+        Log.d(LOG_TAG, "EH visualization ${if (enabled) "enabled" else "disabled"}.")
+    }
+
     // Without a route, electronic horizon operates in tracking mode and the most probable path is
     // estimated based on the current location and previous locations.
     // With a route, electronic horizon operates in map-matched mode and the route is used
@@ -102,7 +128,8 @@ class ElectronicHorizonHandler {
         // the third is for the side paths of the second level, and so on.
         // Each entry defines how far ahead the path should be provided.
         val lookAheadDistancesInMeters = listOf(1000.0, 500.0, 250.0)
-        // Segments will be removed by the HERE SDK once passed and distance to it exceeds the trailingDistanceInMeters.
+        // Segments will be removed by the HERE SDK once passed and the distance to them exceeds trailingDistanceInMeters.
+        // Segments are also removed when the vehicle passes the decision point for alternative side paths.
         val trailingDistanceInMeters = 500.0
         val electronicHorizonOptions =
             ElectronicHorizonOptions(lookAheadDistancesInMeters, trailingDistanceInMeters)
@@ -120,12 +147,13 @@ class ElectronicHorizonHandler {
             throw RuntimeException("ElectronicHorizon is not initialized: " + e.error.name)
         }
 
-        // Remove any existing electronic horizon listeners.
+        // Remove any existing listeners before re-registering.
         stop()
 
         // Create and add new listeners.
         electronicHorizonListener = createElectronicHorizonListener()
         electronicHorizon?.addElectronicHorizonListener(electronicHorizonListener)
+
         electronicHorizonDataLoaderStatusListener =
             createElectronicHorizonDataLoaderStatusListener()
         electronicHorizonDataLoader.addElectronicHorizonDataLoaderStatusListener(
@@ -134,9 +162,9 @@ class ElectronicHorizonHandler {
         Log.d(LOG_TAG, "ElectronicHorizon started.")
     }
 
-    // Similar like the VisualNavigator, the ElectronicHorizon also needs to be updated with
-    // a location, with the difference that the location must be map-matched. Therefore, the
-    // location provided by the VisualNavigator can be used.
+    // Similar to the VisualNavigator, the ElectronicHorizon also needs to be updated with
+    // a location - with the difference that the location must be map-matched. Therefore, the
+    // location provided by the VisualNavigator can be used directly.
     fun update(mapMatchedLocation: MapMatchedLocation) {
         checkNotNull(electronicHorizon) { "ElectronicHorizon is not initialized. Call start() first." }
         electronicHorizon?.update(mapMatchedLocation)
@@ -144,8 +172,9 @@ class ElectronicHorizonHandler {
     }
 
     // Create a listener to get notified about electronic horizon updates while a user moves along the road.
-    // This only informs on the available segement IDs and indexes, so that the actual data can be requested
-    // by the ElectronicHorizonDataLoader.
+    // This informs on the available segment IDs and indexes so that the actual data can be requested
+    // by the ElectronicHorizonDataLoader. It also carries the list of removed segment IDs so that their
+    // polylines can be cleared from the map immediately.
     private fun createElectronicHorizonListener(): ElectronicHorizonListener {
         return object : ElectronicHorizonListener {
             override fun onElectronicHorizonUpdated(
@@ -158,12 +187,39 @@ class ElectronicHorizonHandler {
                 }
                 Log.d(LOG_TAG, "ElectronicHorizonUpdate received.")
 
+                // The update always carries the vehicle's current position in the horizon tree.
+                // pathIndex identifies which path the vehicle is on; pathSegmentIndex identifies
+                // the segment within that path; pathSegmentOffsetInMeters gives the offset from the segment start.
+                val position: ElectronicHorizonPosition? = electronicHorizonUpdate?.position
+                if (position != null) {
+                    Log.d(
+                        LOG_TAG, "EH position: pathIndex=${position.pathIndex}, " +
+                                "pathSegmentIndex=${position.pathSegmentIndex}, " +
+                                "offsetInMeters=${position.pathSegmentOffsetInMeters}"
+                    )
+                }
+
                 // Store last known ElectronicHorizon if present.
                 if (electronicHorizonUpdate?.electronicHorizon != null) {
                     lastElectronicHorizon = electronicHorizonUpdate.electronicHorizon
                 }
-                //Asynchronously start to load required data for the new segments.
-                // Use the ElectronicHorizonDataLoaderStatusListener to get notified when new data is arriving.
+
+                // Remove map polylines for segments that have left the horizon.
+                // Segments are removed by the HERE SDK in two cases:
+                //   1. They are behind the vehicle and exceed trailingDistanceInMeters.
+                //   2. The vehicle passes the decision point for an alternative side path.
+                if (isVisualizationEnabled) {
+                    electronicHorizonUpdate?.segmentChanges?.removedIds?.forEach { segmentId ->
+                        val localId: Long =
+                            (segmentId.ocmSegmentId?.id?.localId ?: return@forEach).toLong()
+                        val polyline = segmentPolylineMap.remove(localId)
+                        polyline?.let { mapView.mapScene.removeMapPolyline(it) }
+                        Log.d("eh segments", "Removing segment polyline - localId=$localId")
+                    }
+                }
+
+                // Asynchronously start to load required data for the new segments.
+                // Use the ElectronicHorizonDataLoaderStatusListener to get notified when new data arrives.
                 if (electronicHorizonUpdate?.segmentChanges != null) {
                     electronicHorizonDataLoader.loadData(electronicHorizonUpdate)
                 }
@@ -172,70 +228,60 @@ class ElectronicHorizonHandler {
     }
 
     // Handle newly arriving map data segments provided by the ElectronicHorizonDataLoader.
-    // This listener is called when the status of the data loader is updated and new segments have been added
-    // or removed.
+    // This listener is called when the data loader's status is updated and segments are ready.
+    // When visualization is enabled, newly loaded segments are drawn as colored polylines.
     private fun createElectronicHorizonDataLoaderStatusListener(): ElectronicHorizonDataLoaderStatusListener {
         return object : ElectronicHorizonDataLoaderStatusListener {
-            override fun onElectronicHorizonDataLoaderStatusUpdated(electronicHorizonDataLoaderStatuses: Map<Int, ElectronicHorizonDataLoadedStatus>) {
+            override fun onElectronicHorizonDataLoaderStatusUpdated(
+                electronicHorizonDataLoaderStatuses: Map<Int, ElectronicHorizonDataLoadedStatus>
+            ) {
                 Log.d(LOG_TAG, "ElectronicHorizonDataLoaderStatus updated.")
                 val lastUpdate = lastElectronicHorizon ?: return
+                val allPaths = lastUpdate.paths
 
-                // Access the segments that were part of the last requested electronic horizon update.
-                // Newly added segments were requested to be loaded in the call to electronicHorizonDataLoader.loadData().
-                // Internally, the data loader keeps track of which segments were requested and keeps updating
-                // the provided ElectronicHorizonUpdate instance over time.
-                for (entry in electronicHorizonDataLoaderStatuses.entries) {
-                    val status: ElectronicHorizonDataLoadedStatus = entry.value
-                    // The integer key represents the level of the most preferred path (0) and side paths (1, 2, ...).
-                    val level: Int = entry.key
-                    // This example shows only how to look at the fully loaded segments of the most preferred path (level 0).
-                    if (level == 0 && status == ElectronicHorizonDataLoadedStatus.FULLY_LOADED) {
-                        // Now, level 0 segments have been fully loaded and you can access their data.
-                        // The electronicHorizonPaths list contains segments from all levels, so you need to filter for level 0 below.
-                        // Skip this iteration to avoid null access.
-                        if (lastUpdate == null) {
-                            continue
+                for ((loadedLevel, status) in electronicHorizonDataLoaderStatuses) {
+                    if (status != ElectronicHorizonDataLoadedStatus.FULLY_LOADED) continue
+
+                    // Level 0 = MPP. Process MPP segments for road sign logging.
+                    if (loadedLevel == 0 && allPaths.isNotEmpty()) {
+                        val mpp = allPaths[0]
+                        for (segment in mpp.segments) {
+                            val directedOCMSegmentId = segment.segmentId.ocmSegmentId ?: continue
+                            val result = electronicHorizonDataLoader.getSegment(directedOCMSegmentId)
+                            if (result.errorCode == null) {
+                                logRoadSigns(checkNotNull(result.segmentData), directedOCMSegmentId)
+                            }
                         }
-                        val electronicHorizonPaths = lastUpdate.paths
-                        for (electronicHorizonPath in electronicHorizonPaths) {
-                            val electronicHorizonPathSegments = electronicHorizonPath.segments
-                            for (segment in electronicHorizonPathSegments) {
-                                // For any segment you can check the parentPathIndex to determine
-                                // if it is part of the most preferred path (MPP) or a side path.
-                                if (segment.parentPathIndex != 0) {
-                                    // Skip side path segments as we only want to log MPP segment data in this example.
-                                    // And we only want to log fully loaded segments.
-                                    continue
-                                }
+                        continue
+                    }
 
-                                val directedOCMSegmentId: DirectedOCMSegmentId = segment.segmentId.ocmSegmentId ?: continue
+                    // For side-path levels (level > 0): walk all path segments and use
+                    // sidePathIndexes to find paths that branch off at each segment.
+                    // sidePathIndexes contains indexes into allPaths[], pointing to branching paths.
+                    // Track processed path indexes to avoid redundant getSegment() calls.
+                    val processedSidePathIndexes = mutableSetOf<Int>()
+                    for (path in allPaths) {
+                        for (segment in path.segments) {
+                            for (sidePathIndex in segment.sidePathIndexes) {
+                                if (sidePathIndex < 0 || sidePathIndex >= allPaths.size) continue
+                                if (!processedSidePathIndexes.add(sidePathIndex)) continue
+                                val branchingPath = allPaths[sidePathIndex]
 
-                                // Retrieving segment data from the loader is executed synchronous. However, since the data has been
-                                // already loaded, this is a fast operation.
-                                val result: ElectronicHorizonDataLoaderResult =
-                                    electronicHorizonDataLoader.getSegment(directedOCMSegmentId)
-                                if (result.errorCode == null) {
-                                    // When errorCode is null, segmentData is guaranteed to be non-null.
-                                    val segmentData: SegmentData = checkNotNull(result.segmentData)
-                                    // Access the data that was requested to be loaded in SegmentDataLoaderOptions.
-                                    // For this example, we just log road signs.
-                                    val roadSigns: List<RoadSign>? = segmentData.roadSigns
-                                    if (roadSigns == null || roadSigns.isEmpty()) {
-                                        continue
-                                    }
-                                    for (roadSign in roadSigns) {
-                                        val roadSignCoordinates: GeoCoordinates =
-                                            getGeoCoordinatesFromOffsetInMeters(
-                                                segmentData.polyline,
-                                                roadSign.offsetInMeters.toDouble()
-                                            )
-                                        Log.d(
-                                            LOG_TAG, ("RoadSign: type = "
-                                                    + roadSign.roadSignType.name
-                                                    + ", offsetInMeters = " + roadSign.offsetInMeters
-                                                    + ", lat/lon: " + roadSignCoordinates.latitude + "/" + roadSignCoordinates.longitude
-                                                    + ", segmentId = " + directedOCMSegmentId.id.localId)
-                                        )
+                                // Only process branching paths at the loaded level.
+                                if (branchingPath.level != loadedLevel) continue
+
+                                Log.d(LOG_TAG, "Branching path index: $sidePathIndex, level: ${branchingPath.level}")
+
+                                // Draw all segments of this branching path.
+                                for (branchSegment in branchingPath.segments) {
+                                    val directedOCMSegmentId = branchSegment.segmentId.ocmSegmentId ?: continue
+                                    val localId = directedOCMSegmentId.id.localId
+                                    val result = electronicHorizonDataLoader.getSegment(directedOCMSegmentId)
+                                    if (result.errorCode == null) {
+                                        val segmentData = checkNotNull(result.segmentData)
+                                        if (isVisualizationEnabled) {
+                                            drawSegmentPolyline(localId, segmentData.polyline, branchingPath.level)
+                                        }
                                     }
                                 }
                             }
@@ -243,6 +289,97 @@ class ElectronicHorizonHandler {
                     }
                 }
             }
+        }
+    }
+
+    // Draw a colored MapPolyline for the given road segment and register it in segmentPolylineMap
+    // so it can be removed when the segment leaves the horizon.
+    //   - MPP (level == 0):        Already rendered as main route
+    //   - Side paths level 1:       Cyan
+    //   - Side paths level 2:       Pink
+    //   - Side paths level 3:       Orange
+    //   - Side paths level 4:       Green
+    private fun drawSegmentPolyline(localId: Int, geoPolyline: GeoPolyline, level: Int) {
+        // MPP (Most Preferred Path, level == 0) is already rendered as the main route
+        // We only draw visual polylines for alternative side-paths (level > 0)
+        if (level == 0) {
+            Log.d("eh segments", "MPP SEGMENT - localId=$localId (already rendered as main route)")
+            return
+        }
+
+
+        val localIdLong: Long = localId.toLong()
+        // Skip if a polyline for this segment is already on the map.
+        if (segmentPolylineMap.containsKey(localIdLong)) return
+
+        val color: Color = when (level) {
+            1 -> Color.valueOf(0f, 1f, 1f, 1.0f)    // Cyan - first side-path level
+            2 -> Color.valueOf(1f, 0.2f, 0.8f, 0.85f) // Pink/Fuchsia - second side-path level
+            3 -> Color.valueOf(1f, 0.65f, 0f, 0.85f) // Orange - third side-path level
+            4 -> Color.valueOf(0f, 1f, 0f, 0.85f) // Green - fourth side-path level
+            else -> return // Don't draw levels beyond 4
+        }
+
+        val colorName = when (level) {
+            1 -> "CYAN"
+            2 -> "PINK"
+            3 -> "ORANGE"
+            4 -> "GREEN"
+            else -> "" // unreachable: color when-expression already returns for level > 4
+        }
+
+        Log.d(
+            "eh segments",
+            "Drawing segment polyline - localId=$localId, level=$level, color=$colorName"
+        )
+
+        val widthInPixels = 25f
+        val mapPolyline: MapPolyline = try {
+            MapPolyline(
+                geoPolyline,
+                SolidRepresentation(
+                    MapMeasureDependentRenderSize(RenderSize.Unit.PIXELS, widthInPixels.toDouble()),
+                    color,
+                    LineCap.ROUND
+                )
+            )
+        } catch (e: MapPolyline.Representation.InstantiationException) {
+            Log.e(LOG_TAG, "MapPolyline instantiation failed: " + e.error.name)
+            return
+        } catch (e: MapMeasureDependentRenderSize.InstantiationException) {
+            Log.e(LOG_TAG, "MapMeasureDependentRenderSize instantiation failed: " + e.error.name)
+            return
+        }
+        mapView.mapScene.addMapPolyline(mapPolyline)
+        segmentPolylineMap[localIdLong] = mapPolyline
+        Log.d("eh segments", "Successfully added polyline to map scene - localId=$localId")
+    }
+
+    // Remove all EH segment polylines from the map.
+    private fun clearVisualization() {
+        for (polyline in segmentPolylineMap.values) {
+            mapView.mapScene.removeMapPolyline(polyline)
+        }
+        segmentPolylineMap.clear()
+    }
+
+    // Log road sign information from a fully loaded segment. Demonstrates how to read
+    // road attributes from SegmentData for MPP segments.
+    private fun logRoadSigns(segmentData: SegmentData, directedOCMSegmentId: DirectedOCMSegmentId) {
+        val roadSigns: List<RoadSign>? = segmentData.roadSigns
+        if (roadSigns == null || roadSigns.isEmpty()) return
+        for (roadSign in roadSigns) {
+            val roadSignCoordinates: GeoCoordinates = getGeoCoordinatesFromOffsetInMeters(
+                segmentData.polyline,
+                roadSign.offsetInMeters.toDouble()
+            )
+            Log.d(
+                LOG_TAG, ("RoadSign: type = "
+                        + roadSign.roadSignType.name
+                        + ", offsetInMeters = " + roadSign.offsetInMeters
+                        + ", lat/lon: " + roadSignCoordinates.latitude + "/" + roadSignCoordinates.longitude
+                        + ", segmentId = " + directedOCMSegmentId.id.localId)
+            )
         }
     }
 
@@ -262,6 +399,7 @@ class ElectronicHorizonHandler {
         electronicHorizonDataLoader.removeElectronicHorizonDataLoaderStatusListener(
             electronicHorizonDataLoaderStatusListener
         )
+        clearVisualization()
         Log.d(LOG_TAG, "ElectronicHorizon stopped.")
     }
 

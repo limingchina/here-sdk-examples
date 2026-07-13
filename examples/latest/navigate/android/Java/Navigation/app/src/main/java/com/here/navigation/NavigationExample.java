@@ -97,7 +97,8 @@ public class NavigationExample {
         createDynamicRoutingEngine();
 
         // Optionally retrieve information about the road(s) ahead of the user based on the most probably paths.
-        electronicHorizonHandler = new ElectronicHorizonHandler();
+        // Pass the MapView so the handler can draw colored segment polylines when visualization is enabled.
+        electronicHorizonHandler = new ElectronicHorizonHandler(mapView);
 
         // A class to handle various kinds of guidance events.
         navigationHandler = new NavigationHandler(context, messageView);
@@ -280,6 +281,11 @@ public class NavigationExample {
 
     public void stopLocating() {
         herePositioningProvider.stopLocating();
+    }
+
+    public void toggleEHVisualization(boolean enabled) {
+        Log.d("NavigationExample", "toggleEHVisualization called with enabled=" + enabled);
+        electronicHorizonHandler.toggleVisualization(enabled);
     }
 
     public void stopRendering() {

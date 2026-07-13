@@ -283,6 +283,14 @@ class App(
             { navigationExample.startNavigation(route, isSimulated, isCameraTrackingEnabled) }
     }
 
+    fun toggleEHVisualizationOn() {
+        navigationExample.toggleEHVisualization(true)
+    }
+
+    fun toggleEHVisualizationOff() {
+        navigationExample.toggleEHVisualization(false)
+    }
+
     fun detach() {
         // Disables TBT guidance (if running) and enters tracking mode.
         navigationExample.stopNavigation(isCameraTrackingEnabled)

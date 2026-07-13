@@ -199,6 +199,10 @@ class MainActivity: ComponentActivity() {
                 ToggleButton("Camera Tracking: ON", "Camera Tracking: OFF") { toggled ->
                     if (toggled) app?.toggleTrackingButtonOnClicked() else app?.toggleTrackingButtonOffClicked()
                 }
+                Spacer(modifier = Modifier.width(10.dp))
+                ToggleButton("EH Paths: ON", "EH Paths: OFF") { toggled ->
+                    if (toggled) app?.toggleEHVisualizationOn() else app?.toggleEHVisualizationOff()
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
