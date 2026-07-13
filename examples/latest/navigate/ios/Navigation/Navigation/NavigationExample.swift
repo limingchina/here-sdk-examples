@@ -74,7 +74,9 @@ class NavigationExample : DynamicRoutingDelegate, MessageDelegate {
 
         // A class to handle various kinds of guidance events.
 
-        electronicHorizonHandler = ElectronicHorizonHandler()
+        // Optionally retrieve information about the road(s) ahead of the user based on the most probable paths.
+        // Pass the MapView so the handler can draw colored segment polylines when visualization is enabled.
+        electronicHorizonHandler = ElectronicHorizonHandler(mapView: mapView)
         
         navigationHandler = NavigationHandler(
             visualNavigator, dynamicRoutingEngine, electronicHorizonHandler, routeCalculator)
@@ -241,6 +243,10 @@ class NavigationExample : DynamicRoutingDelegate, MessageDelegate {
 
     func getLastKnownLocation() -> Location? {
         return herePositioningProvider.getLastKnownLocation()
+    }
+
+    func toggleEHVisualization(enabled: Bool) {
+        electronicHorizonHandler.toggleVisualization(enabled: enabled)
     }
 
     // Conform to MessageDelegate protocol.

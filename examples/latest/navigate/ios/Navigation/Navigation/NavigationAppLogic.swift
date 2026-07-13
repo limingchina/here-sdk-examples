@@ -106,6 +106,14 @@ class NavigationAppLogic: ObservableObject, MessageDelegate, LongPressDelegate {
     func disableCameraTracking() {
         navigationExample?.stopCameraTracking()
     }
+
+    func enableEHVisualization() {
+        navigationExample?.toggleEHVisualization(enabled: true)
+    }
+
+    func disableEHVisualization() {
+        navigationExample?.toggleEHVisualization(enabled: false)
+    }
     
     private func calculateRoute(isSimulated: Bool) {
         clearMap()

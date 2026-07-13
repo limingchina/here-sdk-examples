@@ -93,7 +93,8 @@ class NavigationExample {
     _createDynamicRoutingEngine();
 
     // Optionally retrieve information about the road(s) ahead of the user based on the most probably paths.
-    _electronicHorizonHandler = ElectronicHorizonHandler();
+    // Pass the HereMapController so the handler can draw colored segment polylines when visualization is enabled.
+    _electronicHorizonHandler = ElectronicHorizonHandler(_hereMapController);
 
     _routeCalculator = routeCalculator;
 
@@ -250,6 +251,10 @@ class NavigationExample {
     // Leaves guidance (if it was running) and enables tracking mode. The camera may optionally follow, see toggleTracking().
     _visualNavigator.route = null;
     _herePositioningProvider.startLocating(_visualNavigator, LocationAccuracy.navigation);
+  }
+
+  void toggleEHVisualization(bool enabled) {
+    _electronicHorizonHandler.toggleVisualization(enabled);
   }
 
   void detach() {

@@ -35,7 +35,6 @@ import 'SpeedBumpWarningProvider.dart';
 /// behaviors. Related APIs may change for new releases without a deprecation process.
 class WarnerEngineExample {
   late WarnerEngine _warnerEngine;
-  late WarningsRegistry _warningsRegistry;
   bool _isSetUp = false;
   final _speedBumpWarningProvider = SpeedBumpWarningProvider();
 
@@ -48,11 +47,6 @@ class WarnerEngineExample {
     // Get the WarnerEngine from the VisualNavigator.
     // The engine is already pre-configured and internally connected to the navigator.
     _warnerEngine = visualNavigator.warnerEngine;
-
-    // The WarningsRegistry stores detailed warning metadata for each warning type.
-    // Use it to look up full warning details (e.g., SafetyCameraWarning, TruckRestrictionWarning)
-    // from the generic Warning object received in the WarningListener.
-    _warningsRegistry = _warnerEngine.getWarningsRegistry();
 
     // Configure all warning options in one place.
     _configureWarningOptions();
@@ -69,11 +63,11 @@ class WarnerEngineExample {
     _configureEnabledWarnings();
 
     // Register a single WarningListener to receive all warning events.
-    _warnerEngine.addWarningListener(WarningListener((List<Warning> warnings) {
-      // Each Warning in the list contains a warningType, distanceType, and a unique id.
+    _warnerEngine.addWarningListener(WarningListener((List<WarningUpdate> warnings, WarningsRegistry warningsRegistry) {
+      // Each WarningUpdate contains a warning (with warningType and id), a warningStatus, and optional distances.
       // Use the WarningsRegistry to look up the detailed typed warning object.
-      for (Warning warning in warnings) {
-        _handleWarning(warning);
+      for (WarningUpdate warningUpdate in warnings) {
+        _handleWarning(warningUpdate, warningsRegistry);
       }
     }));
 
@@ -182,66 +176,66 @@ class WarnerEngineExample {
     _warnerEngine.setEnabledWarnings(enabledWarnings);
   }
 
-  /// Dispatches each [Warning] to the appropriate handler based on its warningType.
-  /// The Warning object is generic and carries only an id, distanceType, and warningType.
+  /// Dispatches each [WarningUpdate] to the appropriate handler based on its warningType.
+  /// The WarningUpdate carries the Warning (with id and warningType) and the warningStatus.
   /// Use the [WarningsRegistry] to retrieve the full typed warning with all details.
-  void _handleWarning(Warning warning) {
-    switch (warning.warningType) {
+  void _handleWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    switch (warningUpdate.warning.warningType) {
       case WarningType.safetyCamera:
-        _handleSafetyCameraWarning(warning);
+        _handleSafetyCameraWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.truckRestriction:
-        _handleTruckRestrictionWarning(warning);
+        _handleTruckRestrictionWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.roadSign:
-        _handleRoadSignWarning(warning);
+        _handleRoadSignWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.schoolZone:
-        _handleSchoolZoneWarning(warning);
+        _handleSchoolZoneWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.borderCrossing:
-        _handleBorderCrossingWarning(warning);
+        _handleBorderCrossingWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.dangerZone:
-        _handleDangerZoneWarning(warning);
+        _handleDangerZoneWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.lowSpeedZone:
-        _handleLowSpeedZoneWarning(warning);
+        _handleLowSpeedZoneWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.realisticView:
-        _handleRealisticViewWarning(warning);
+        _handleRealisticViewWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.tollStop:
-        _handleTollStopWarning(warning);
+        _handleTollStopWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.trafficMerge:
-        _handleTrafficMergeWarning(warning);
+        _handleTrafficMergeWarning(warningUpdate, warningsRegistry);
         break;
       case WarningType.custom:
-        _handleCustomWarning(warning);
+        _handleCustomWarning(warningUpdate, warningsRegistry);
         break;
       default:
-        print("Unhandled warning type: ${warning.warningType}, distance type: ${warning.distanceType}");
+        print("Unhandled warning type: ${warningUpdate.warning.warningType}, warning status: ${warningUpdate.warningStatus}");
         break;
     }
   }
 
   /// Handles safety camera warnings.
   /// Safety cameras include speed cameras, red light cameras, and similar monitoring installations.
-  void _handleSafetyCameraWarning(Warning warning) {
-    SafetyCameraWarning? safetyCameraWarning = _warningsRegistry.getSafetyCameraWarning(warning);
+  void _handleSafetyCameraWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    SafetyCameraWarning? safetyCameraWarning = warningsRegistry.getSafetyCameraWarning(warningUpdate.warning);
     if (safetyCameraWarning == null) {
       print("SafetyCameraWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("SafetyCameraWarning ${safetyCameraWarning.type.name} ahead in: "
           "${safetyCameraWarning.distanceToCameraInMeters} meters"
           ", speed limit = ${safetyCameraWarning.speedLimitInMetersPerSecond} m/s.");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("SafetyCameraWarning ${safetyCameraWarning.type.name} passed.");
-    } else if (warning.distanceType == DistanceType.reached) {
+    } else if (warningUpdate.warningStatus == WarningStatus.reached) {
       print("SafetyCameraWarning ${safetyCameraWarning.type.name} reached.");
     }
   }
@@ -249,21 +243,21 @@ class WarnerEngineExample {
   /// Handles truck restriction warnings.
   /// These alert truck drivers to upcoming road restrictions such as bridges with limited height
   /// or roads with weight limits that may prevent passage.
-  void _handleTruckRestrictionWarning(Warning warning) {
-    TruckRestrictionWarning? truckRestrictionWarning = _warningsRegistry.getTruckRestrictionWarning(warning);
+  void _handleTruckRestrictionWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    TruckRestrictionWarning? truckRestrictionWarning = warningsRegistry.getTruckRestrictionWarning(warningUpdate.warning);
     if (truckRestrictionWarning == null) {
       print("TruckRestrictionWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("TruckRestrictionWarning ahead in: ${truckRestrictionWarning.distanceInMeters} meters.");
       if (truckRestrictionWarning.timeRule != null && !truckRestrictionWarning.timeRule!.appliesTo(DateTime.now())) {
         print("Note that this truck restriction warning currently does not apply.");
       }
-    } else if (warning.distanceType == DistanceType.reached) {
+    } else if (warningUpdate.warningStatus == WarningStatus.reached) {
       print("A truck restriction has been reached.");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A truck restriction just passed.");
     }
 
@@ -282,16 +276,16 @@ class WarnerEngineExample {
 
   /// Handles road sign warnings.
   /// Notifies on road signs as they appear along the road, such as stop signs.
-  void _handleRoadSignWarning(Warning warning) {
-    RoadSignWarning? roadSignWarning = _warningsRegistry.getRoadSignWarning(warning);
+  void _handleRoadSignWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    RoadSignWarning? roadSignWarning = warningsRegistry.getRoadSignWarning(warningUpdate.warning);
     if (roadSignWarning == null) {
       print("RoadSignWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("RoadSignWarning of type: ${roadSignWarning.type.name} ahead in (m): ${roadSignWarning.distanceToRoadSignInMeters}");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("RoadSignWarning of type: ${roadSignWarning.type.name} just passed.");
     }
 
@@ -302,22 +296,22 @@ class WarnerEngineExample {
 
   /// Handles school zone warnings.
   /// School zones indicate areas near schools where speed limits are lower.
-  void _handleSchoolZoneWarning(Warning warning) {
-    SchoolZoneWarning? schoolZoneWarning = _warningsRegistry.getSchoolZoneWarning(warning);
+  void _handleSchoolZoneWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    SchoolZoneWarning? schoolZoneWarning = warningsRegistry.getSchoolZoneWarning(warningUpdate.warning);
     if (schoolZoneWarning == null) {
       print("SchoolZoneWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("SchoolZoneWarning ahead in: ${schoolZoneWarning.distanceToSchoolZoneInMeters} meters.");
       print("Speed limit for this school zone: ${schoolZoneWarning.speedLimitInMetersPerSecond} m/s.");
       if (schoolZoneWarning.timeRule != null && !schoolZoneWarning.timeRule!.appliesTo(DateTime.now())) {
         print("Note that this school zone warning currently does not apply.");
       }
-    } else if (warning.distanceType == DistanceType.reached) {
+    } else if (warningUpdate.warningStatus == WarningStatus.reached) {
       print("A school zone has been reached.");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A school zone has been passed.");
     }
   }
@@ -325,14 +319,14 @@ class WarnerEngineExample {
   /// Handles border crossing warnings.
   /// Notifies when country or state borders are approached, along with general speed limits
   /// that apply in the destination country or state.
-  void _handleBorderCrossingWarning(Warning warning) {
-    BorderCrossingWarning? borderCrossingWarning = _warningsRegistry.getBorderCrossingWarning(warning);
+  void _handleBorderCrossingWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    BorderCrossingWarning? borderCrossingWarning = warningsRegistry.getBorderCrossingWarning(warningUpdate.warning);
     if (borderCrossingWarning == null) {
       print("BorderCrossingWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("BorderCrossing ahead in: ${borderCrossingWarning.distanceToBorderCrossingInMeters} meters.");
       print("BorderCrossing type: ${borderCrossingWarning.type.name}");
       print("BorderCrossing country code: ${borderCrossingWarning.administrativeRules.countryCode.name}");
@@ -345,7 +339,7 @@ class WarnerEngineExample {
       print("BorderCrossing: Speed limit in cities (m/s): ${speedLimits.maxSpeedUrbanInMetersPerSecond}");
       print("BorderCrossing: Speed limit outside cities (m/s): ${speedLimits.maxSpeedRuralInMetersPerSecond}");
       print("BorderCrossing: Speed limit on highways (m/s): ${speedLimits.maxSpeedHighwaysInMetersPerSecond}");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A border crossing has been passed.");
     }
   }
@@ -353,39 +347,39 @@ class WarnerEngineExample {
   /// Handles danger zone warnings.
   /// Danger zones refer to areas where there is an increased risk of traffic incidents.
   /// Note that danger zones are only available in selected countries, such as France.
-  void _handleDangerZoneWarning(Warning warning) {
-    DangerZoneWarning? dangerZoneWarning = _warningsRegistry.getDangerZoneWarning(warning);
+  void _handleDangerZoneWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    DangerZoneWarning? dangerZoneWarning = warningsRegistry.getDangerZoneWarning(warningUpdate.warning);
     if (dangerZoneWarning == null) {
       print("DangerZoneWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("DangerZone ahead in: ${dangerZoneWarning.distanceInMeters} meters.");
       print("isZoneStart: ${dangerZoneWarning.isZoneStart}");
-    } else if (warning.distanceType == DistanceType.reached) {
+    } else if (warningUpdate.warningStatus == WarningStatus.reached) {
       print("A danger zone has been reached. isZoneStart: ${dangerZoneWarning.isZoneStart}");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A danger zone has been passed.");
     }
   }
 
   /// Handles low speed zone warnings.
   /// Low speed zones indicate areas where the speed limit is particularly low.
-  void _handleLowSpeedZoneWarning(Warning warning) {
-    LowSpeedZoneWarning? lowSpeedZoneWarning = _warningsRegistry.getLowSpeedZoneWarning(warning);
+  void _handleLowSpeedZoneWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    LowSpeedZoneWarning? lowSpeedZoneWarning = warningsRegistry.getLowSpeedZoneWarning(warningUpdate.warning);
     if (lowSpeedZoneWarning == null) {
       print("LowSpeedZoneWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("LowSpeedZone ahead in: ${lowSpeedZoneWarning.distanceToLowSpeedZoneInMeters} meters.");
       print("Speed limit in low speed zone (m/s): ${lowSpeedZoneWarning.speedLimitInMetersPerSecond}");
-    } else if (warning.distanceType == DistanceType.reached) {
+    } else if (warningUpdate.warningStatus == WarningStatus.reached) {
       print("A low speed zone has been reached.");
       print("Speed limit in low speed zone (m/s): ${lowSpeedZoneWarning.speedLimitInMetersPerSecond}");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A low speed zone has been passed.");
     }
   }
@@ -393,8 +387,8 @@ class WarnerEngineExample {
   /// Handles realistic view warnings.
   /// Realistic views provide 3D junction views and signpost images as SVG data to help
   /// the driver orientate at complex junctions.
-  void _handleRealisticViewWarning(Warning warning) {
-    RealisticViewWarning? realisticViewWarning = _warningsRegistry.getRealisticViewWarning(warning);
+  void _handleRealisticViewWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    RealisticViewWarning? realisticViewWarning = warningsRegistry.getRealisticViewWarning(warningUpdate.warning);
     if (realisticViewWarning == null) {
       print("RealisticViewWarning: No detailed data available.");
       return;
@@ -402,9 +396,9 @@ class WarnerEngineExample {
 
     double distance = realisticViewWarning.distanceToRealisticViewInMeters;
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("RealisticView ahead in: $distance meters.");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("A RealisticView just passed.");
     }
 
@@ -423,8 +417,8 @@ class WarnerEngineExample {
 
   /// Handles toll stop warnings.
   /// Notifies on upcoming toll stops including lane details and supported payment methods.
-  void _handleTollStopWarning(Warning warning) {
-    TollStop? tollStop = _warningsRegistry.getTollStopWarning(warning);
+  void _handleTollStopWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    TollStop? tollStop = warningsRegistry.getTollStopWarning(warningUpdate.warning);
     if (tollStop == null) {
       print("TollStopWarning: No detailed data available.");
       return;
@@ -444,35 +438,35 @@ class WarnerEngineExample {
 
   /// Handles traffic merge warnings.
   /// Notifies about merging traffic from side roads or ramps to the current road.
-  void _handleTrafficMergeWarning(Warning warning) {
-    TrafficMergeWarning? trafficMergeWarning = _warningsRegistry.getTrafficMergeWarning(warning);
+  void _handleTrafficMergeWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    TrafficMergeWarning? trafficMergeWarning = warningsRegistry.getTrafficMergeWarning(warningUpdate.warning);
     if (trafficMergeWarning == null) {
       print("TrafficMergeWarning: No detailed data available.");
       return;
     }
 
-    if (warning.distanceType == DistanceType.ahead) {
+    if (warningUpdate.warningStatus == WarningStatus.ahead) {
       print("TrafficMerge: ${trafficMergeWarning.roadType.name} ahead in: "
           "${trafficMergeWarning.distanceToTrafficMergeInMeters} meters"
           ", merging from the ${trafficMergeWarning.side.name} side"
           ", with lanes = ${trafficMergeWarning.laneCount}");
-    } else if (warning.distanceType == DistanceType.passed) {
+    } else if (warningUpdate.warningStatus == WarningStatus.passed) {
       print("TrafficMerge: ${trafficMergeWarning.roadType.name} passed.");
     }
   }
 
   /// Handles custom warnings delivered by the WarnerEngine.
   /// Decode the CustomWarning from the WarningsRegistry and check its customWarningType.
-  void _handleCustomWarning(Warning warning) {
-    CustomWarning? customWarning = _warningsRegistry.getCustomWarning(warning);
+  void _handleCustomWarning(WarningUpdate warningUpdate, WarningsRegistry warningsRegistry) {
+    CustomWarning? customWarning = warningsRegistry.getCustomWarning(warningUpdate.warning);
     if (customWarning == null) {
       print("CustomWarning: No detailed data available.");
       return;
     }
     if (customWarning.customWarningType == SpeedBumpWarningProvider.speedBumpWarningId) {
       String? segRef = _speedBumpWarningProvider.getSegmentReference(customWarning);
-      // The WarnerEngine provides distanceType (ahead/passed) based on startOffsetInMeters.
-      String status = warning.distanceType == DistanceType.ahead ? "ahead" : "passed";
+      // The WarnerEngine provides warningStatus (ahead/passed) based on startOffsetInMeters.
+      String status = warningUpdate.warningStatus == WarningStatus.ahead ? "ahead" : "passed";
       print("Speed bump $status. segmentRef=$segRef");
     } else {
       print("Unsupported custom warning type: ${customWarning.customWarningType}");

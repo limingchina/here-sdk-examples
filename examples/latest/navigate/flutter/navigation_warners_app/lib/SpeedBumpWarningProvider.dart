@@ -51,7 +51,6 @@ class SpeedBumpWarningProvider {
           payload.setString(_payloadSegmentReference, currentSegment.segmentReference.toString());
 
           CustomWarning customWarning = CustomWarning();
-          customWarning.id = span.hashCode;
           customWarning.customWarningType = speedBumpWarningId;
           // startOffsetInMeters tells the WarnerEngine where in the segment the bump is.
           customWarning.startOffsetInMeters = startOffset.toDouble();

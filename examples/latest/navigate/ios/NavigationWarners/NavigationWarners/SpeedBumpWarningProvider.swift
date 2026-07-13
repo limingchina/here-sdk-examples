@@ -53,7 +53,6 @@ class SpeedBumpWarningProvider: CustomWarningProvider {
                                       value: "\(currentSegment.segmentReference)")
 
                     let customWarning = CustomWarning(
-                        id: Int32(truncatingIfNeeded: span.hashValue),
                         customWarningType: SpeedBumpWarningProvider.speedBumpWarningID,
                         // startOffsetInMeters tells the WarnerEngine where in the segment the bump is.
                         startOffsetInMeters: Double(startOffset),

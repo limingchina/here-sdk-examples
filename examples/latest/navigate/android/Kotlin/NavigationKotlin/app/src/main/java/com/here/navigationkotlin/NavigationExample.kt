@@ -90,7 +90,8 @@ class NavigationExample(
         createDynamicRoutingEngine()
 
         // Optionally retrieve information about the road(s) ahead of the user based on the most probably paths.
-        electronicHorizonHandler = ElectronicHorizonHandler()
+        // Pass the MapView so the handler can draw colored segment polylines when visualization is enabled.
+        electronicHorizonHandler = ElectronicHorizonHandler(mapView!!)
 
         // A class to handle various kinds of guidance events.
         navigationHandler = NavigationHandler(context, messageView)
@@ -284,6 +285,10 @@ class NavigationExample(
         // It is recommended to stop rendering before leaving an activity.
         // This also removes the current location marker.
         visualNavigator.stopRendering()
+    }
+
+    fun toggleEHVisualization(enabled: Boolean) {
+        electronicHorizonHandler.toggleVisualization(enabled)
     }
 
     companion object {

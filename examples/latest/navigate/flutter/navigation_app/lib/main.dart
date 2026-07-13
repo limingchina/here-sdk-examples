@@ -67,6 +67,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _isTracking = true;
   late final AppLifecycleListener _appLifecycleListener;
   String _messageState = "";
+  bool _ehVisualizationEnabled = false;
 
   Future<bool> _handleBackPress() async {
     // Handle the back press.
@@ -105,6 +106,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       Expanded(child: button("Clear map / Stop", _stopNavigationButtonClicked)),
                     ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: button(
+                    _ehVisualizationEnabled ? "EH Paths: ON" : "EH Paths: OFF",
+                    _toggleEHVisualization,
                   ),
                 ),
                 messageStateWidget(_messageState),
@@ -208,6 +216,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _stopNavigationButtonClicked() {
     if (_appLogic != null) {
       _appLogic.stopNavigation();
+    }
+  }
+
+  void _toggleEHVisualization() {
+    setState(() {
+      _ehVisualizationEnabled = !_ehVisualizationEnabled;
+    });
+    if (_appLogic != null) {
+      _appLogic.toggleEHVisualization(_ehVisualizationEnabled);
     }
   }
 

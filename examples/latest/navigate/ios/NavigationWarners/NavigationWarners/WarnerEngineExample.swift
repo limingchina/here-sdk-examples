@@ -32,7 +32,6 @@ import Foundation
 class WarnerEngineExample: WarningDelegate {
 
     private var warnerEngine: WarnerEngine!
-    private var warningsRegistry: WarningsRegistry!
     private let speedBumpWarningProvider = SpeedBumpWarningProvider()
 
     // Sets up the WarnerEngine obtained from the given VisualNavigator.
@@ -44,11 +43,6 @@ class WarnerEngineExample: WarningDelegate {
         // Get the WarnerEngine from the VisualNavigator.
         // The engine is already pre-configured and internally connected to the navigator.
         warnerEngine = visualNavigator.warnerEngine
-
-        // The WarningsRegistry stores detailed warning metadata for each warning type.
-        // Use it to look up full warning details (e.g., SafetyCameraWarning, TruckRestrictionWarning)
-        // from the generic Warning object received in the WarningDelegate.
-        warningsRegistry = warnerEngine.getWarningsRegistry()
 
         // Configure all warning options in one place.
         configureWarningOptions()
@@ -72,11 +66,11 @@ class WarnerEngineExample: WarningDelegate {
 
     // Conform to WarningDelegate.
     // Called whenever the WarnerEngine detects new warnings.
-    func onWarnings(warnings: [Warning]) {
-        // Each Warning in the list contains a warningType, distanceType, and a unique id.
+    func onWarnings(warnings: [WarningUpdate], warningsRegistry: WarningsRegistry) {
+        // Each WarningUpdate contains a warning (with warningType and id), a warningStatus, and optional distances.
         // Use the WarningsRegistry to look up the detailed typed warning object.
-        for warning in warnings {
-            handleWarning(warning)
+        for warningUpdate in warnings {
+            handleWarning(warningUpdate, warningsRegistry: warningsRegistry)
         }
     }
 
@@ -176,47 +170,47 @@ class WarnerEngineExample: WarningDelegate {
         warnerEngine.setEnabledWarnings(warningTypes: enabledWarnings)
     }
 
-    // Dispatches each Warning to the appropriate handler based on its warningType.
-    // The Warning object is generic and carries only an id, distanceType, and warningType.
+    // Dispatches each WarningUpdate to the appropriate handler based on its warningType.
+    // The WarningUpdate carries the Warning (with id and warningType) and the warningStatus.
     // Use the WarningsRegistry to retrieve the full typed warning with all details.
-    private func handleWarning(_ warning: Warning) {
-        switch warning.warningType {
+    private func handleWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        switch warningUpdate.warning.warningType {
         case .safetyCamera:
-            handleSafetyCameraWarning(warning)
+            handleSafetyCameraWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .truckRestriction:
-            handleTruckRestrictionWarning(warning)
+            handleTruckRestrictionWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .roadSign:
-            handleRoadSignWarning(warning)
+            handleRoadSignWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .schoolZone:
-            handleSchoolZoneWarning(warning)
+            handleSchoolZoneWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .borderCrossing:
-            handleBorderCrossingWarning(warning)
+            handleBorderCrossingWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .dangerZone:
-            handleDangerZoneWarning(warning)
+            handleDangerZoneWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .lowSpeedZone:
-            handleLowSpeedZoneWarning(warning)
+            handleLowSpeedZoneWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .realisticView:
-            handleRealisticViewWarning(warning)
+            handleRealisticViewWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .tollStop:
-            handleTollStopWarning(warning)
+            handleTollStopWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .trafficMerge:
-            handleTrafficMergeWarning(warning)
+            handleTrafficMergeWarning(warningUpdate, warningsRegistry: warningsRegistry)
         case .custom:
-            handleCustomWarning(warning)
+            handleCustomWarning(warningUpdate, warningsRegistry: warningsRegistry)
         default:
-            print("Unhandled warning type: \(warning.warningType), distance type: \(warning.distanceType)")
+            print("Unhandled warning type: \(warningUpdate.warning.warningType), warning status: \(warningUpdate.warningStatus)")
         }
     }
 
     // Handles safety camera warnings.
     // Safety cameras include speed cameras, red light cameras, and similar monitoring installations.
-    private func handleSafetyCameraWarning(_ warning: Warning) {
-        guard let safetyCameraWarning = warningsRegistry.getSafetyCameraWarning(warning: warning) else {
+    private func handleSafetyCameraWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let safetyCameraWarning = warningsRegistry.getSafetyCameraWarning(warning: warningUpdate.warning) else {
             print("SafetyCameraWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("SafetyCameraWarning \(safetyCameraWarning.type) ahead in: " +
                   "\(safetyCameraWarning.distanceToCameraInMeters) meters" +
@@ -225,19 +219,21 @@ class WarnerEngineExample: WarningDelegate {
             print("SafetyCameraWarning \(safetyCameraWarning.type) passed.")
         case .reached:
             print("SafetyCameraWarning \(safetyCameraWarning.type) reached.")
+        default:
+            break
         }
     }
 
     // Handles truck restriction warnings.
     // These alert truck drivers to upcoming road restrictions such as bridges with limited height
     // or roads with weight limits that may prevent passage.
-    private func handleTruckRestrictionWarning(_ warning: Warning) {
-        guard let truckRestrictionWarning = warningsRegistry.getTruckRestrictionWarning(warning: warning) else {
+    private func handleTruckRestrictionWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let truckRestrictionWarning = warningsRegistry.getTruckRestrictionWarning(warning: warningUpdate.warning) else {
             print("TruckRestrictionWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("TruckRestrictionWarning ahead in: \(truckRestrictionWarning.distanceInMeters) meters.")
             if let timeRule = truckRestrictionWarning.timeRule, !timeRule.appliesTo(dateTime: Date()) {
@@ -247,6 +243,8 @@ class WarnerEngineExample: WarningDelegate {
             print("A truck restriction has been reached.")
         case .passed:
             print("A truck restriction just passed.")
+        default:
+            break
         }
 
         if let weightRestriction = truckRestrictionWarning.weightRestriction {
@@ -260,13 +258,13 @@ class WarnerEngineExample: WarningDelegate {
 
     // Handles road sign warnings.
     // Notifies on road signs as they appear along the road, such as stop signs.
-    private func handleRoadSignWarning(_ warning: Warning) {
-        guard let roadSignWarning = warningsRegistry.getRoadSignWarning(warning: warning) else {
+    private func handleRoadSignWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let roadSignWarning = warningsRegistry.getRoadSignWarning(warning: warningUpdate.warning) else {
             print("RoadSignWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("RoadSignWarning of type: \(roadSignWarning.type) ahead in (m): \(roadSignWarning.distanceToRoadSignInMeters)")
         case .passed:
@@ -282,13 +280,13 @@ class WarnerEngineExample: WarningDelegate {
 
     // Handles school zone warnings.
     // School zones indicate areas near schools where speed limits are lower.
-    private func handleSchoolZoneWarning(_ warning: Warning) {
-        guard let schoolZoneWarning = warningsRegistry.getSchoolZoneWarning(warning: warning) else {
+    private func handleSchoolZoneWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let schoolZoneWarning = warningsRegistry.getSchoolZoneWarning(warning: warningUpdate.warning) else {
             print("SchoolZoneWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("SchoolZoneWarning ahead in: \(schoolZoneWarning.distanceToSchoolZoneInMeters) meters.")
             print("Speed limit for this school zone: \(schoolZoneWarning.speedLimitInMetersPerSecond) m/s.")
@@ -299,19 +297,19 @@ class WarnerEngineExample: WarningDelegate {
             print("A school zone has been reached.")
         case .passed:
             print("A school zone has been passed.")
+        default:
+            break
         }
     }
-
-    // Handles border crossing warnings.
     // Notifies when country or state borders are approached, along with general speed limits
     // that apply in the destination country or state.
-    private func handleBorderCrossingWarning(_ warning: Warning) {
-        guard let borderCrossingWarning = warningsRegistry.getBorderCrossingWarning(warning: warning) else {
+    private func handleBorderCrossingWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let borderCrossingWarning = warningsRegistry.getBorderCrossingWarning(warning: warningUpdate.warning) else {
             print("BorderCrossingWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("BorderCrossing ahead in: \(borderCrossingWarning.distanceToBorderCrossingInMeters) meters.")
             print("BorderCrossing type: \(borderCrossingWarning.type)")
@@ -335,13 +333,13 @@ class WarnerEngineExample: WarningDelegate {
     // Handles danger zone warnings.
     // Danger zones refer to areas where there is an increased risk of traffic incidents.
     // Note that danger zones are only available in selected countries, such as France.
-    private func handleDangerZoneWarning(_ warning: Warning) {
-        guard let dangerZoneWarning = warningsRegistry.getDangerZoneWarning(warning: warning) else {
+    private func handleDangerZoneWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let dangerZoneWarning = warningsRegistry.getDangerZoneWarning(warning: warningUpdate.warning) else {
             print("DangerZoneWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("DangerZone ahead in: \(dangerZoneWarning.distanceInMeters) meters.")
             print("isZoneStart: \(dangerZoneWarning.isZoneStart)")
@@ -349,18 +347,18 @@ class WarnerEngineExample: WarningDelegate {
             print("A danger zone has been reached. isZoneStart: \(dangerZoneWarning.isZoneStart)")
         case .passed:
             print("A danger zone has been passed.")
+        default:
+            break
         }
     }
-
-    // Handles low speed zone warnings.
     // Low speed zones indicate areas where the speed limit is particularly low.
-    private func handleLowSpeedZoneWarning(_ warning: Warning) {
-        guard let lowSpeedZoneWarning = warningsRegistry.getLowSpeedZoneWarning(warning: warning) else {
+    private func handleLowSpeedZoneWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let lowSpeedZoneWarning = warningsRegistry.getLowSpeedZoneWarning(warning: warningUpdate.warning) else {
             print("LowSpeedZoneWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("LowSpeedZone ahead in: \(lowSpeedZoneWarning.distanceToLowSpeedZoneInMeters) meters.")
             print("Speed limit in low speed zone (m/s): \(lowSpeedZoneWarning.speedLimitInMetersPerSecond)")
@@ -369,21 +367,21 @@ class WarnerEngineExample: WarningDelegate {
             print("Speed limit in low speed zone (m/s): \(lowSpeedZoneWarning.speedLimitInMetersPerSecond)")
         case .passed:
             print("A low speed zone has been passed.")
+        default:
+            break
         }
     }
-
-    // Handles realistic view warnings.
     // Realistic views provide 3D junction views and signpost images as SVG data to help
     // the driver orientate at complex junctions.
-    private func handleRealisticViewWarning(_ warning: Warning) {
-        guard let realisticViewWarning = warningsRegistry.getRealisticViewWarning(warning: warning) else {
+    private func handleRealisticViewWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let realisticViewWarning = warningsRegistry.getRealisticViewWarning(warning: warningUpdate.warning) else {
             print("RealisticViewWarning: No detailed data available.")
             return
         }
 
         let distance = realisticViewWarning.distanceToRealisticViewInMeters
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("RealisticView ahead in: \(distance) meters.")
         case .passed:
@@ -406,8 +404,8 @@ class WarnerEngineExample: WarningDelegate {
 
     // Handles toll stop warnings.
     // Notifies on upcoming toll stops including lane details and supported payment methods.
-    private func handleTollStopWarning(_ warning: Warning) {
-        guard let tollStop = warningsRegistry.getTollStopWarning(warning: warning) else {
+    private func handleTollStopWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let tollStop = warningsRegistry.getTollStopWarning(warning: warningUpdate.warning) else {
             print("TollStopWarning: No detailed data available.")
             return
         }
@@ -425,13 +423,13 @@ class WarnerEngineExample: WarningDelegate {
 
     // Handles traffic merge warnings.
     // Notifies about merging traffic from side roads or ramps to the current road.
-    private func handleTrafficMergeWarning(_ warning: Warning) {
-        guard let trafficMergeWarning = warningsRegistry.getTrafficMergeWarning(warning: warning) else {
+    private func handleTrafficMergeWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let trafficMergeWarning = warningsRegistry.getTrafficMergeWarning(warning: warningUpdate.warning) else {
             print("TrafficMergeWarning: No detailed data available.")
             return
         }
 
-        switch warning.distanceType {
+        switch warningUpdate.warningStatus {
         case .ahead:
             print("TrafficMerge: \(trafficMergeWarning.roadType) ahead in: " +
                   "\(trafficMergeWarning.distanceToTrafficMergeInMeters) meters" +
@@ -446,15 +444,15 @@ class WarnerEngineExample: WarningDelegate {
 
     // Handles custom warnings delivered by the WarnerEngine.
     // Decode the CustomWarning from the WarningsRegistry and check its customWarningType.
-    private func handleCustomWarning(_ warning: Warning) {
-        guard let customWarning = warningsRegistry.getCustomWarning(warning: warning) else {
+    private func handleCustomWarning(_ warningUpdate: WarningUpdate, warningsRegistry: WarningsRegistry) {
+        guard let customWarning = warningsRegistry.getCustomWarning(warning: warningUpdate.warning) else {
             print("CustomWarning: No detailed data available.")
             return
         }
         if customWarning.customWarningType == SpeedBumpWarningProvider.speedBumpWarningID {
             let segRef = speedBumpWarningProvider.getSegmentReference(customWarning) ?? "unknown"
-            // The WarnerEngine provides distanceType (ahead/passed) based on startOffsetInMeters.
-            let status = warning.distanceType == .ahead ? "ahead" : "passed"
+            // The WarnerEngine provides warningStatus (ahead/passed) based on startOffsetInMeters.
+            let status = warningUpdate.warningStatus == .ahead ? "ahead" : "passed"
             print("Speed bump \(status). segmentRef=\(segRef)")
         } else {
             print("Unsupported custom warning type: \(customWarning.customWarningType)")

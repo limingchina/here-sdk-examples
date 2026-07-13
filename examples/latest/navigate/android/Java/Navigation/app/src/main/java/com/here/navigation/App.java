@@ -50,6 +50,8 @@ import java.util.Locale;
 // simulated locations.
 public class App {
 
+    private static final String LOG_TAG = App.class.getSimpleName();
+
     public static final GeoCoordinates DEFAULT_MAP_CENTER = new GeoCoordinates(52.520798, 13.409408);
     public static final int DEFAULT_DISTANCE_IN_METERS = 1000 * 2;
 
@@ -172,11 +174,11 @@ public class App {
     }
 
     private void showRouteOnMap(Route route) {
-        // Show route as polyline.
+        // Show route as polyline (MPP).
         GeoPolyline routeGeoPolyline = route.getGeometry();
         float widthInPixels = 20;
         Color polylineColor = Color.valueOf(0, 0.56f, 0.54f, 0.63f);
-        MapPolyline routeMapPolyline = null;
+        MapPolyline routeMapPolyline;
         try {
             routeMapPolyline = new MapPolyline(routeGeoPolyline, new MapPolyline.SolidRepresentation(
                     new MapMeasureDependentRenderSize(RenderSize.Unit.PIXELS, widthInPixels),
@@ -184,8 +186,10 @@ public class App {
                     LineCap.ROUND));
         } catch (MapPolyline.Representation.InstantiationException e) {
             Log.e("MapPolyline Representation Exception:", e.error.name());
+            return;
         } catch (MapMeasureDependentRenderSize.InstantiationException e) {
             Log.e("MapMeasureDependentRenderSize Exception:", e.error.name());
+            return;
         }
 
         mapView.getMapScene().addMapPolyline(routeMapPolyline);
@@ -275,6 +279,11 @@ public class App {
                            navigationExample.startNavigation(route, isSimulated, isCameraTrackingEnabled);
                        })
                .show();
+    }
+
+    public void toggleEHVisualization(boolean enabled) {
+        Log.d(LOG_TAG, "App.toggleEHVisualization called with enabled=" + enabled);
+        navigationExample.toggleEHVisualization(enabled);
     }
 
     public void detach() {

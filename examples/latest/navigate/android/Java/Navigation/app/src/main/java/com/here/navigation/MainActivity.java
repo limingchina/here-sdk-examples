@@ -64,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private MapView mapView;
     private App app;
     private TextView messageView;
+    private boolean ehVisualizationEnabled = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -229,6 +230,19 @@ public class MainActivity extends AppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         mapView.onSaveInstanceState(outState);
         super.onSaveInstanceState(outState);
+    }
+    
+    public void onToggleEHVisualizationClicked(View view) {
+        UnitButton button = (UnitButton) view;
+        if (app == null) return;
+        ehVisualizationEnabled = !ehVisualizationEnabled;
+        app.toggleEHVisualization(ehVisualizationEnabled);
+        if (ehVisualizationEnabled) {
+            button.setText("EH Paths: ON");
+        } else {
+            button.setText("EH Paths: OFF");
+        }
+        Log.d(TAG, "EH Paths visualization " + (ehVisualizationEnabled ? "enabled" : "disabled"));
     }
     
     private void disposeHERESDK() {
